@@ -1,0 +1,50 @@
+name: Build NetSurf for Kindle K3
+on: workflow_dispatch
+
+jobs:
+  build-kindle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout NetSurf Fork
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libcurl4-openssl-dev \
+            libpng-dev libjpeg-dev libssl-dev pkg-config gperf rsync
+
+      - name: Set Up Kindle Toolchain (koxtoolchain)
+        run: |
+          git clone --depth 1 https://github.com/koreader/koxtoolchain.git
+          cd koxtoolchain
+          # Build the 'kindle' target specifically for K2/K3 (ARMv6)
+          ./gen-tc.sh kindle
+          echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
+          echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
+
+      - name: Build NetSurf Dependencies
+        run: |
+          # Use the NetSurf build system helper
+          # Note: Real builds require building NetSurf's custom libraries (libhubbub, libdom, etc.)
+          # using the cross-compiler.
+          export HOST=arm-kindle-linux-gnueabi
+          export PREFIX=$HOME/kindle-env
+          mkdir -p $PREFIX
+          
+          # Example for one core lib; repeat for libparserutils, libwapcaplet, etc.
+          make install TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX
+
+      - name: Compile NetSurf (Framebuffer)
+        run: |
+          export HOST=arm-kindle-linux-gnueabi
+          export PREFIX=$HOME/kindle-env
+          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: netsurf-kindle-k3
+          path: nsfb  # The resulting framebuffer binary
