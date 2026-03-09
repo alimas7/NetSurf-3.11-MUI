@@ -18,7 +18,6 @@ jobs:
 
       - name: Download Pre-built Kindle Toolchain
         run: |
-          # URL: https://github.com
           echo "aHR0cHM6Ly9naXRodWIuY29tL2tvcmVhZGVyL2tveHRvb2xjaGFpbi9yZWxlYXNlcy9kb3dubG9hZC8yMDI1LjA1L2tpbmRsZS50YXIuZ3o=" | base64 -d | xargs wget -O kindle.tar.gz
           tar -xf kindle.tar.gz -C $HOME
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
@@ -32,41 +31,46 @@ jobs:
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           export NSSHARE=$PREFIX/share/netsurf-buildsystem
           
-          # Use XCFLAGS to append to NetSurf's internal flags rather than overwriting them
+          # Use QFLAGS or XCFLAGS to append. -I$PREFIX/include is vital for Expat.
           export XCFLAGS="-I$PREFIX/include -Wno-error=undef"
           export LDFLAGS="-L$PREFIX/lib"
           mkdir -p $PREFIX/include
 
-          # 1. Cross-compile Expat
-          # URL: https://github.com
+          # 1. Expat
           echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
           tar -xf expat.tar.gz
           cd expat-2.6.0
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
-          make install
-          cd ..
+          make install && cd ..
 
-          # 2. Build NetSurf Buildsystem
-          # URL: git://git.netsurf-browser.org/buildsystem.git
+          # 2. Buildsystem
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 3. Build Mandatory Libraries
-          # Library names: libparserutils libwapcaplet libhubbub libcss libdom libnsbmp libnsgif libnsfb
-          LIBS="bGlicGFyc2VydXRpbHM= bGlid2FwY2FwbGV0 bGliaHVidWVi bGlic2Nz bGlibm9t bGlibnNibXA= bGlibnNnaWY= bGlibnNmYg=="
-          for encoded_lib in $LIBS; do
-            lib=$(echo $encoded_lib | base64 -d)
-            echo "--- Building $lib ---"
-            # URL: git://git.netsurf-browser.org/$lib.git
-            echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvJmxpYi5naXQ=" | sed "s/JmxpYg==/$(echo -n $lib | base64)/" | base64 -d | xargs git clone
-            cd $lib
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS"
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS" install
+          # 3. Libraries (Individual Base64 to prevent injection errors)
+          # Order: libparserutils, libwapcaplet, libhubbub, libcss, libdom, libnsbmp, libnsgif, libnsfb
+          LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHVidWViLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGljc3MuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
+
+          for url_b64 in $LIBS_B64; do
+            URL=$(echo $url_b64 | base64 -d)
+            DIR=$(basename $URL .git)
+            echo "--- Building $DIR ---"
+            git clone $URL
+            cd $DIR
+            # We use 'override' logic by passing flags to make directly
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="-I$PREFIX/include -I$PWD/include -I$PWD/src" XCFLAGS="$XCFLAGS"
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="-I$PREFIX/include -I$PWD/include -I$PWD/src" XCFLAGS="$XCFLAGS" install
             cd ..
           done
 
-          # 4. Build NetSurf Browser
-          # URL: git://git.netsurf-browser.org/netsurf.git
+          # 4. NetSurf Browser
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS" install
