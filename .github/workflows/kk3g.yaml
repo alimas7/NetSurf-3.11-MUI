@@ -19,10 +19,10 @@ jobs:
       - name: Download Pre-built Kindle Toolchain
         run: |
           # Use the direct link to NiLuJe's pre-compiled Kindle toolchain
-          wget -O kindle-toolchain.tar.xz https://github.com
+          wget https://github.com/koreader/koxtoolchain/releases/download/2025.05/kindle.tar.gz
           
           # Extract to home directory
-          tar -xf kindle-toolchain.tar.xz -C $HOME
+          tar -xf kindle.tar.gz -C $HOME
           
           # Set paths for subsequent steps
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
