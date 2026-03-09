@@ -44,10 +44,11 @@ jobs:
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 3. Mandatory Libraries (VERIFIED STRINGS)
+          # 3. Mandatory Libraries (FIXED LIBHUBBUB)
+          # Order: libparserutils, libwapcaplet, libhubbub, libcss, libdom, libnsbmp, libnsgif, libnsfb
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
-          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHVidWIuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGljc3MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0
@@ -60,7 +61,7 @@ jobs:
             echo "--- Building $DIR ---"
             git clone $URL
             cd $DIR
-            # Pass INCLUDES to fix the header error (aliases.h)
+            # Using INCLUDES to ensure local headers are found without wiping CFLAGS
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src"
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" install
             cd ..
