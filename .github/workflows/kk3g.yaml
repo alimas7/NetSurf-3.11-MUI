@@ -14,7 +14,7 @@ jobs:
           sudo apt-get install -y build-essential bison flex libcurl4-openssl-dev \
             libpng-dev libjpeg-dev libssl-dev pkg-config gperf rsync wget \
             help2man gawk texinfo libncurses-dev libtool libtool-bin \
-            autoconf automake gettext ncurses-dev
+            autoconf automake gettext ncurses-dev libexpat1-dev
 
       - name: Download Pre-built Kindle Toolchain
         run: |
@@ -25,6 +25,7 @@ jobs:
 
       - name: Build NetSurf Stack
         run: |
+          # Environment Setup
           export HOST=arm-kindle-linux-gnueabi
           export CC=${HOST}-gcc
           export PREFIX=$GITHUB_WORKSPACE/kindle-root
@@ -32,19 +33,32 @@ jobs:
           export LD_LIBRARY_PATH=$PREFIX/lib:$LD_LIBRARY_PATH
           mkdir -p $PREFIX
 
-          # 1. Build the NetSurf Build System (Must be first)
+          # 1. Build the NetSurf Build System (Required for all libraries)
           git clone git://git.netsurf-browser.org/buildsystem.git
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 2. Build Mandatory Libraries in strict order
+          # 2. Build Mandatory Libraries in strict dependency order
           LIBS="libparserutils libwapcaplet libhubbub libcss libdom libnsbmp libnsgif libnsfb"
           for lib in $LIBS; do
+            echo "--- Building $lib ---"
             git clone git://git.netsurf-browser.org/$lib.git
             cd $lib
+            
+            # Fix: Disable Expat XML binding for libdom to avoid missing expat.h
+            if [ "$lib" == "libdom" ]; then
+              echo "override NETSURF_DOM_BINDINGS_XML := no" > Makefile.config.override
+            fi
+            
             make HOST=$HOST PREFIX=$PREFIX install
             cd ..
           done
 
-          # 3. Finally, build NetSurf Browser
-          # Note: If your 'Checkout Code' step is a NetSurf fork, it should be in the current dir
+          # 3. Finally, build the NetSurf Browser frontend
+          # Using TARGET=framebuffer for Kindle
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX install
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: netsurf-kindle-k3
+          path: ${{ github.workspace }}/kindle-root/
