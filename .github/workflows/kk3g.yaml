@@ -5,49 +5,32 @@ jobs:
   build-kindle:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout NetSurf Fork
+      - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Install Build Dependencies
+      - name: Install System Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bison flex libcurl4-openssl-dev \
-            libpng-dev libjpeg-dev libssl-dev pkg-config gperf rsync \
+            libpng-dev libjpeg-dev libssl-dev pkg-config gperf rsync wget \
             help2man gawk texinfo libncurses-dev libtool libtool-bin \
             autoconf automake gettext ncurses-dev
 
-      - name: Set Up Kindle Toolchain (koxtoolchain)
+      - name: Download Pre-built Kindle Toolchain
         run: |
-          git clone --depth 1 https://github.com/koreader/koxtoolchain.git
-          cd koxtoolchain
-          # Build the 'kindle' target specifically for K2/K3 (ARMv6)
-          export MAKEINFO=true
-          ./gen-tc.sh kindle
+          # Downloading a pre-compiled ARMv6 toolchain saves ~2 hours of build time
+          wget https://github.com
+          tar xf x-tools-arm-kindle-linux-gnueabi.tar.xz -C $HOME
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
 
-      - name: Build NetSurf Dependencies
+      - name: Build NetSurf Stack
         run: |
-          # Use the NetSurf build system helper
-          # Note: Real builds require building NetSurf's custom libraries (libhubbub, libdom, etc.)
-          # using the cross-compiler.
           export HOST=arm-kindle-linux-gnueabi
-          export PREFIX=$HOME/kindle-env
-          mkdir -p $PREFIX
+          export CC=${HOST}-gcc
+          export PREFIX=$GITHUB_WORKSPACE/kindle-root
           
-          # Example for one core lib; repeat for libparserutils, libwapcaplet, etc.
-          make install TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX
-
-      - name: Compile NetSurf (Framebuffer)
-        run: |
-          export HOST=arm-kindle-linux-gnueabi
-          export PREFIX=$HOME/kindle-env
-          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX
-
-      - name: Upload Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: netsurf-kindle-k3
-          path: nsfb  # The resulting framebuffer binary
+          # You MUST build the libraries in order. 
+          # NetSurf's 'env.sh' or specialized build scripts are needed here.
+          # For a fork like MUI, ensure you are force-setting the TARGET:
+          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX install
