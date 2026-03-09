@@ -44,8 +44,7 @@ jobs:
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 3. Mandatory Libraries (MANUALLY RE-VERIFIED)
-          # libparserutils, libwapcaplet, libhubbub, libcss, libdom, libnsbmp, libnsgif, libnsfb
+          # 3. Mandatory Libraries (Strict Base64 verification)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA==
@@ -61,18 +60,24 @@ jobs:
             echo "--- Building $DIR ---"
             git clone $URL
             cd $DIR
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src"
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" install
+            # INCLUDES for paths, XCFLAGS for the Expat 2.6.0 fix (-DXML_GE=1)
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
+                 INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" \
+                 XCFLAGS="-DXML_GE=1"
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
+                 INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" \
+                 XCFLAGS="-DXML_GE=1" install
             cd ..
           done
 
           # 4. NetSurf Browser
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
-          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE install
+          # Adding the Expat fix here too just in case NetSurf front-end probes it
+          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="-DXML_GE=1" install
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: upload-artifact@v4
         with:
           name: netsurf-kindle-k3
           path: ${{ github.workspace }}/kindle-root/
