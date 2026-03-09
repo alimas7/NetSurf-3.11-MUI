@@ -29,7 +29,7 @@ jobs:
           export CC=${HOST}-gcc
           export PREFIX=$GITHUB_WORKSPACE/kindle-root
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-          # Added -Wno-error=undef to bypass the Expat 2.6.0 macro error
+          # Crucial: -Wno-error=undef handles the Expat 2.6.0 macro issue
           export CFLAGS="-I$PREFIX/include -Wno-error=undef"
           export LDFLAGS="-L$PREFIX/lib"
           mkdir -p $PREFIX
@@ -52,7 +52,8 @@ jobs:
             echo "--- Building $lib ---"
             git clone git://git.netsurf-browser.org/$lib.git
             cd $lib
-            # Passing CFLAGS explicitly to ensure the warning suppression sticks
+            # Running build then install separately with explicit CFLAGS
+            make HOST=$HOST PREFIX=$PREFIX CFLAGS="$CFLAGS"
             make HOST=$HOST PREFIX=$PREFIX CFLAGS="$CFLAGS" install
             cd ..
           done
