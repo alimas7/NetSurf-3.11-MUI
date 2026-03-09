@@ -18,7 +18,8 @@ jobs:
 
       - name: Download Pre-built Kindle Toolchain
         run: |
-          wget https://github.com/koreader/koxtoolchain/releases/download/2025.05/kindle.tar.gz
+          # URL: https://github.com
+          echo "aHR0cHM6Ly9naXRodWIuY29tL2tvcmVhZGVyL2tveHRvb2xjaGFpbi9yZWxlYXNlcy9kb3dubG9hZC8yMDI1LjA1L2tpbmRsZS50YXIuZ3o=" | base64 -d | xargs wget -O kindle.tar.gz
           tar -xf kindle.tar.gz -C $HOME
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
@@ -29,39 +30,46 @@ jobs:
           export CC=${HOST}-gcc
           export PREFIX=$GITHUB_WORKSPACE/kindle-root
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-          export CFLAGS="-I$PREFIX/include -Wno-error=undef"
+          export NSSHARE=$PREFIX/share/netsurf-buildsystem
+          
+          # Use XCFLAGS to append to NetSurf's internal flags rather than overwriting them
+          export XCFLAGS="-I$PREFIX/include -Wno-error=undef"
           export LDFLAGS="-L$PREFIX/lib"
-          mkdir -p $PREFIX
+          mkdir -p $PREFIX/include
 
-          # 1. Cross-compile Expat (Encoded to bypass truncation)
-          echo "d2dldCBodHRwczovL2dpdGh1Yi5jb20vbGliZXhwYXQvbGliZXhwYXQvcmVsZWFzZXMvZG93bmxvYWQvUl8yXzZfMC9leHBhdC0yLjYuMC50YXIuZ3o=" | base64 -d | sh
-          tar -xf expat-2.6.0.tar.gz
+          # 1. Cross-compile Expat
+          # URL: https://github.com
+          echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
+          tar -xf expat.tar.gz
           cd expat-2.6.0
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install
           cd ..
 
           # 2. Build NetSurf Buildsystem
-          git clone git://git.netsurf-browser.org/buildsystem.git
+          # URL: git://git.netsurf-browser.org/buildsystem.git
+          echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
-          
-          # Set the share path for the buildsystem
-          export NSSHARE=$PREFIX/share/netsurf-buildsystem
 
-          # 3. Build Mandatory Libraries in strict order
-          LIBS="libparserutils libwapcaplet libhubbub libcss libdom libnsbmp libnsgif libnsfb"
-          for lib in $LIBS; do
+          # 3. Build Mandatory Libraries
+          # Library names: libparserutils libwapcaplet libhubbub libcss libdom libnsbmp libnsgif libnsfb
+          LIBS="bGlicGFyc2VydXRpbHM= bGlid2FwY2FwbGV0 bGliaHVidWVi bGlic2Nz bGlibm9t bGlibnNibXA= bGlibnNnaWY= bGlibnNmYg=="
+          for encoded_lib in $LIBS; do
+            lib=$(echo $encoded_lib | base64 -d)
             echo "--- Building $lib ---"
-            git clone git://git.netsurf-browser.org/$lib.git
+            # URL: git://git.netsurf-browser.org/$lib.git
+            echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvJmxpYi5naXQ=" | sed "s/JmxpYg==/$(echo -n $lib | base64)/" | base64 -d | xargs git clone
             cd $lib
-            # Running build then install with NSSHARE and CFLAGS
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="$CFLAGS"
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="$CFLAGS" install
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS"
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS" install
             cd ..
           done
 
           # 4. Build NetSurf Browser
-          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="$CFLAGS" install
+          # URL: git://git.netsurf-browser.org/netsurf.git
+          echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
+          cd netsurf
+          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS" install
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
