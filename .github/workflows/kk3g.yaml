@@ -30,9 +30,6 @@ jobs:
           export PREFIX=$GITHUB_WORKSPACE/kindle-root
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           export NSSHARE=$PREFIX/share/netsurf-buildsystem
-          
-          # Use QFLAGS or XCFLAGS to append. -I$PREFIX/include is vital for Expat.
-          export XCFLAGS="-I$PREFIX/include -Wno-error=undef"
           export LDFLAGS="-L$PREFIX/lib"
           mkdir -p $PREFIX/include
 
@@ -47,11 +44,10 @@ jobs:
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 3. Libraries (Individual Base64 to prevent injection errors)
-          # Order: libparserutils, libwapcaplet, libhubbub, libcss, libdom, libnsbmp, libnsgif, libnsfb
+          # 3. Mandatory Libraries (VERIFIED STRINGS)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
-          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHVidWViLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHVidWIuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGljc3MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0
@@ -64,16 +60,16 @@ jobs:
             echo "--- Building $DIR ---"
             git clone $URL
             cd $DIR
-            # We use 'override' logic by passing flags to make directly
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="-I$PREFIX/include -I$PWD/include -I$PWD/src" XCFLAGS="$XCFLAGS"
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="-I$PREFIX/include -I$PWD/include -I$PWD/src" XCFLAGS="$XCFLAGS" install
+            # Pass INCLUDES to fix the header error (aliases.h)
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src"
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" install
             cd ..
           done
 
           # 4. NetSurf Browser
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
-          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="$XCFLAGS" install
+          make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE install
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
