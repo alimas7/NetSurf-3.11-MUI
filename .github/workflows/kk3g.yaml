@@ -23,6 +23,7 @@ jobs:
           git clone --depth 1 https://github.com/koreader/koxtoolchain.git
           cd koxtoolchain
           # Build the 'kindle' target specifically for K2/K3 (ARMv6)
+          export MAKEINFO=true
           ./gen-tc.sh kindle
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
