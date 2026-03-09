@@ -18,9 +18,13 @@ jobs:
 
       - name: Download Pre-built Kindle Toolchain
         run: |
-          # Downloading a pre-compiled ARMv6 toolchain saves ~2 hours of build time
-          wget https://github.com
-          tar xf x-tools-arm-kindle-linux-gnueabi.tar.xz -C $HOME
+          # Use the direct link to NiLuJe's pre-compiled Kindle toolchain
+          wget -O kindle-toolchain.tar.xz https://github.com
+          
+          # Extract to home directory
+          tar -xf kindle-toolchain.tar.xz -C $HOME
+          
+          # Set paths for subsequent steps
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
 
