@@ -18,13 +18,8 @@ jobs:
 
       - name: Download Pre-built Kindle Toolchain
         run: |
-          # Use the direct link to NiLuJe's pre-compiled Kindle toolchain
           wget https://github.com/koreader/koxtoolchain/releases/download/2025.05/kindle.tar.gz
-          
-          # Extract to home directory
           tar -xf kindle.tar.gz -C $HOME
-          
-          # Set paths for subsequent steps
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
 
@@ -33,8 +28,23 @@ jobs:
           export HOST=arm-kindle-linux-gnueabi
           export CC=${HOST}-gcc
           export PREFIX=$GITHUB_WORKSPACE/kindle-root
-          
-          # You MUST build the libraries in order. 
-          # NetSurf's 'env.sh' or specialized build scripts are needed here.
-          # For a fork like MUI, ensure you are force-setting the TARGET:
+          export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+          export LD_LIBRARY_PATH=$PREFIX/lib:$LD_LIBRARY_PATH
+          mkdir -p $PREFIX
+
+          # 1. Build the NetSurf Build System (Must be first)
+          git clone git://git.netsurf-browser.org/buildsystem.git
+          cd buildsystem && make install PREFIX=$PREFIX && cd ..
+
+          # 2. Build Mandatory Libraries in strict order
+          LIBS="libparserutils libwapcaplet libhubbub libcss libdom libnsbmp libnsgif libnsfb"
+          for lib in $LIBS; do
+            git clone git://git.netsurf-browser.org/$lib.git
+            cd $lib
+            make HOST=$HOST PREFIX=$PREFIX install
+            cd ..
+          done
+
+          # 3. Finally, build NetSurf Browser
+          # Note: If your 'Checkout Code' step is a NetSurf fork, it should be in the current dir
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX install
