@@ -81,7 +81,7 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 7. Freetype (Base64 Encoded for Reliability)
+          # 7. Freetype (NOW ENCODED)
           echo "aHR0cHM6Ly9naXRodWIuY29tL2ZyZWV0eXBlL2ZyZWV0eXBlL2FyY2hpdmUvcmVmcy90YWdzL1ZFUi0yLTEzLTMudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
           mkdir -p freetype-src
           tar -xf freetype.tar.gz -C freetype-src --strip-components=1
@@ -91,7 +91,7 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 8a. libparserutils (Individual build with Header Fixes)
+          # 8a. libparserutils (Manual header fix)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
           cd libparserutils
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
@@ -101,15 +101,15 @@ jobs:
             CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
           cd ..
 
-          # 8b. libutf8proc (Individual build - Fix for root header)
+          # 8b. libutf8proc (Manual root header fix)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
           cd libutf8proc
-          cp utf8proc.h src/
+          cp utf8proc.h src/ || cp include/utf8proc.h src/ || true
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
             CFLAGS="$KINDLE_CFLAGS -Isrc -I." install
           cd ..
 
-          # 8c. Remaining Loop (Deduplicated)
+          # 8c. Remaining Loop
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
           for url_b64 in $LIBS_B64; do
             URL=$(echo $url_b64 | base64 -d)
