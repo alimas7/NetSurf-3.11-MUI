@@ -50,8 +50,9 @@ jobs:
           # 3. nsgenbind (FORCE HOST BUILD)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
           cd nsgenbind
-          # We explicitly override CC and HOST to 'gcc' and empty to force a local x86_64 build
-          make PREFIX=$PREFIX NSSHARE=$NSSHARE CC=gcc HOST="" install
+          # Set HOST to the runner's architecture to prevent "Failed to guess HOST"
+          # and override CC to the local gcc.
+          make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install
           cd ..
           export PATH=$PREFIX/bin:$PATH
 
@@ -88,6 +89,8 @@ jobs:
 
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
                BUILD_CC=gcc XCFLAGS="-DXML_GE=1" install
+
+          ${HOST}-strip $PREFIX/bin/netsurf
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
