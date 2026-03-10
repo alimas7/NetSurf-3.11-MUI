@@ -1,5 +1,4 @@
-### Page 1, 2, 3 ###
-name: Build NetSurf for Kindle K3 (Full Cached)
+name: Build NetSurf for Kindle K3 (Full Cached Fix)
 on: workflow_dispatch
 
 jobs:
@@ -22,7 +21,7 @@ jobs:
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-netsurf-v2-${{ hashFiles('.github/workflows/*.yaml') }}
+      key: ${{ runner.os }}-netsurf-v3-${{ hashFiles('.github/workflows/*.yaml') }}
 
    - name: Download Pre-built Kindle Toolchain
      run: |
@@ -84,7 +83,7 @@ jobs:
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
       make -j$(nproc) install && cd ..
 
-      # 8a. libparserutils
+      # 8a. libparserutils (Manual header fix)
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
       cd libparserutils
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
@@ -101,28 +100,19 @@ jobs:
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install
       cd ..
 
-      # 8c. Remaining Loop (Fixed Header Symlinking)
+      # 8c. Remaining Loop (Fixed for libcss duplicates)
       LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
       for url_b64 in $LIBS_B64; do
         URL=$(echo $url_b64 | base64 -d)
         DIR=$(basename $URL .git)
         git clone $URL && cd $DIR
-        
-        # FIX: Ensure the internal include headers are visible to the buildsystem
-        # This links the project's own include directory into the build root
-        if [ -d "include" ]; then
-          for header_dir in include/*; do
-            if [ -d "$header_dir" ]; then
-              ln -s "$header_dir" "$(basename "$header_dir")" 2>/dev/null || true
-            fi
+        # Only symlink internal headers if they aren't libcss
+        if [ "$DIR" != "libcss" ]; then
+          for d in $(find src -maxdepth 1 -type d -not -path 'src'); do
+            ln -s $d $(basename $d) 2>/dev/null || true
           done
         fi
-
-        for d in $(find src -maxdepth 1 -type d -not -path 'src'); do
-          ln -s $d $(basename $d) 2>/dev/null || true
-        done
-
-        make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
+        make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
           CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc -Iinclude -I$PREFIX/include" \
           LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
         cd ..
