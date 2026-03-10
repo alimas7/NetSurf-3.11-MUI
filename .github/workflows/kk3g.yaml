@@ -22,7 +22,6 @@ jobs:
           tar -xf kindle.tar.gz -C $HOME
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
-
       - name: Build NetSurf Stack
         run: |
           export HOST=arm-kindle-linux-gnueabi
@@ -31,7 +30,6 @@ jobs:
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           export NSSHARE=$PREFIX/share/netsurf-buildsystem
           
-          # Target-specific flags for the Kindle
           KINDLE_CFLAGS="-DXML_GE=1 -I$PREFIX/include"
           KINDLE_LDFLAGS="-L$PREFIX/lib"
           
@@ -43,30 +41,30 @@ jobs:
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
-          # 2. Buildsystem (Installed first)
+          # 2. Buildsystem
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 3. nsgenbind (Build for HOST - Success in previous log)
+          # 3. nsgenbind (Build for HOST)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
           cd nsgenbind
           make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install
           cd ..
           export PATH=$PREFIX/bin:$PATH
 
-          # 4. LibPNG (Fixed Download Link)
-          wget https://download.sourceforge.net
-          tar -xf libpng-1.6.44.tar.gz && cd libpng-1.6.44
+          # 4. LibPNG (Direct Link)
+          wget https://download.sourceforge.net -O libpng.tar.gz
+          tar -xf libpng.tar.gz && cd libpng-1.6.44
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
-          # 5. Freetype (Fixed Download Link)
-          wget https://download.savannah.gnu.org
-          tar -xf freetype-2.13.3.tar.gz && cd freetype-2.13.3
+          # 5. Freetype (Direct Link)
+          wget https://download.savannah.gnu.org -O freetype.tar.gz
+          tar -xf freetype.tar.gz && cd freetype-2.13.3
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make install && cd ..
 
-          # 6. Mandatory NetSurf Libraries (Fixed libhubbub string)
+          # 6. Mandatory NetSurf Libraries
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
