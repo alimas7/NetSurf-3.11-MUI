@@ -77,7 +77,7 @@ jobs:
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="-DXML_GE=1" install
 
       - name: Upload Artifacts
-        uses: upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: netsurf-kindle-k3
           path: ${{ github.workspace }}/kindle-root/
