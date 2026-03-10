@@ -113,7 +113,7 @@ jobs:
             -j$(nproc) install
           cd ..
 
-          # 8b. Remaining NetSurf libraries (with specific utf8proc fix)
+          # 8b. Remaining NetSurf libraries (The Universal Include Fix)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
           for url_b64 in $LIBS_B64; do
             URL=$(echo $url_b64 | base64 -d)
@@ -122,23 +122,24 @@ jobs:
             git clone $URL
             cd $DIR
             
-            # Fix for libutf8proc: find the header and put it in the current dir
-            find . -name "utf8proc.h" -exec cp {} . \;
-
-            # Mapping for complex libraries (hubbub, css, dom)
-            if [ -d "src" ] && [ "$DIR" != "libutf8proc" ]; then
-              for subdir in $(find src -maxdepth 1 -type d -not -path 'src'); do
-                mkdir -p $(basename $subdir)
-                cp -r $subdir/* $(basename $subdir)/ 2>/dev/null || true
-              done
+            # Setup recursive include paths for the compiler
+            # This allows #include "utils/utils.h" to find src/utils/utils.h
+            export CPATH="$PWD:$PWD/src:$PWD/include:$PREFIX/include"
+            
+            # Special case for libutf8proc which puts its header in the root
+            if [ "$DIR" = "libutf8proc" ]; then
+              [ -f utf8proc.h ] && cp utf8proc.h include/ 2>/dev/null || true
             fi
 
             # Build and Install
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
               CC=$CC BUILD_CC=gcc \
-              CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Iinclude -Isrc -I$PREFIX/include" \
+              CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE" \
               LDFLAGS="$KINDLE_LDFLAGS" \
               -j$(nproc) install
+            
+            # Clean CPATH for the next library in the loop
+            unset CPATH
             cd ..
           done
 
