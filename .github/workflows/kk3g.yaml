@@ -31,16 +31,15 @@ jobs:
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           export NSSHARE=$PREFIX/share/netsurf-buildsystem
           export LDFLAGS="-L$PREFIX/lib"
-          # GLOBAL FIX: Ensure XML_GE is defined for Expat 2.6.0+ 
-          # and include the prefix path for headers
           export CFLAGS="-DXML_GE=1 -I$PREFIX/include"
+          
           mkdir -p $PREFIX/include
 
           # 1. Expat
           echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
           tar -xf expat.tar.gz
           cd expat-2.6.0
-          # ./buildconf.sh
+          ./buildconf.sh
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
@@ -48,8 +47,10 @@ jobs:
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
 
-          # 3. Mandatory Libraries (Strict Base64 verification)
-          LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
+          # 3. Mandatory Libraries (Now including libnsutils and libutf8proc)
+          LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA==
@@ -64,20 +65,14 @@ jobs:
             echo "--- Building $DIR ---"
             git clone $URL
             cd $DIR
-            # INCLUDES for paths, XCFLAGS for the Expat 2.6.0 fix (-DXML_GE=1)
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
-                 INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" \
-                 XCFLAGS="-DXML_GE=1"
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
-                 INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" \
-                 XCFLAGS="-DXML_GE=1" install
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE install
             cd ..
           done
 
           # 4. NetSurf Browser
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
-          # Adding the Expat fix here too just in case NetSurf front-end probes it
+          # Using XCFLAGS here to ensure the FB target respects the Expat fix
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE XCFLAGS="-DXML_GE=1" install
 
       - name: Upload Artifacts
