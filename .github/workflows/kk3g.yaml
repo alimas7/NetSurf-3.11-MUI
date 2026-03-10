@@ -31,32 +31,63 @@ jobs:
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           export NSSHARE=$PREFIX/share/netsurf-buildsystem
           
-          # We define these but DO NOT export them globally yet 
-          # to avoid the "stubs-32.h" host error.
+          # Target-specific flags (Kindle)
           KINDLE_CFLAGS="-DXML_GE=1 -I$PREFIX/include"
           KINDLE_LDFLAGS="-L$PREFIX/lib"
           
-          mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig
+          mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
 
-          # 1. Expat, 2. Buildsystem (Same as before)
-          # ... (Keep your existing code for these two) ...
+          # 1. Expat (Required for XML)
+          echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
+          tar -xf expat.tar.gz && cd expat-2.6.0
+          ./configure --host=$HOST --prefix=$PREFIX --disable-shared
+          make install && cd ..
 
-          # 3. nsgenbind (BUILD FOR HOST - MUST BE CLEAN)
+          # 2. Buildsystem (CRITICAL: Must be installed before nsgenbind)
+          echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
+          cd buildsystem && make install PREFIX=$PREFIX && cd ..
+
+          # 3. nsgenbind (Build for HOST - cleaned environment)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
           cd nsgenbind
-          # Notice: No KINDLE_CFLAGS here!
           make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install
           cd ..
           export PATH=$PREFIX/bin:$PATH
 
-          # 4. LibPNG & 5. Freetype (BUILD FOR KINDLE)
-          # ... (Use your existing code, but add CFLAGS="$KINDLE_CFLAGS" to ./configure) ...
+          # 4. LibPNG (Target Build)
+          wget https://download.sourceforge.net
+          tar -xf libpng-1.6.40.tar.gz && cd libpng-1.6.40
+          ./configure --host=$HOST --prefix=$PREFIX --disable-shared
+          make install && cd ..
 
-          # 6. Mandatory NetSurf Libraries
-          # (Loop through your LIBS_B64 as before, but use the line below):
-          # make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" install
+          # 5. Freetype (Target Build)
+          wget https://download.savannah.gnu.org
+          tar -xf freetype-2.13.2.tar.gz && cd freetype-2.13.2
+          ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
+          make install && cd ..
 
-          # 7. NetSurf Browser (THE CRITICAL FIX)
+          # 6. Mandatory NetSurf Libraries (Target Build)
+          LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
+
+          for url_b64 in $LIBS_B64; do
+            URL=$(echo $url_b64 | base64 -d)
+            DIR=$(basename $URL .git)
+            git clone $URL && cd $DIR
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
+                 CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" install
+            cd ..
+          done
+
+          # 7. NetSurf Browser
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
           cat <<EOF > Makefile.config
@@ -66,11 +97,20 @@ jobs:
           override NETSURF_USE_FREETYPE := YES
           EOF
 
-          # We pass Kindle flags to CFLAGS/LDFLAGS, but keep BUILD_CC clean
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
                BUILD_CC=gcc \
                CFLAGS="$KINDLE_CFLAGS" \
                LDFLAGS="$KINDLE_LDFLAGS" install
+          
+          # 8. Cleanup and Script
+          cd $PREFIX
+          ${HOST}-strip bin/netsurf
+          cat <<EOF > bin/netsurf.sh
+          #!/bin/sh
+          export LD_LIBRARY_PATH=\$PWD/lib:\$LD_LIBRARY_PATH
+          ./bin/netsurf -b 8 -f /dev/fb0 "https://www.google.com"
+          EOF
+          chmod +x bin/netsurf.sh
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
