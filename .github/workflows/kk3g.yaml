@@ -72,7 +72,7 @@ jobs:
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make install && cd ..
 
-          # 8. Mandatory NetSurf Libraries (Including Header Path Fix)
+          # 8. Mandatory NetSurf Libraries (Internal Header Fix)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
@@ -89,10 +89,12 @@ jobs:
             DIR=$(basename $URL .git)
             echo "--- Building $DIR ---"
             git clone $URL && cd $DIR
-            # CRITICAL FIX: Adding -Iinclude and -Isrc to INCLUDES for internal headers
+            
+            # Use COMPONENT_FLAGS to avoid overriding global KINDLE_CFLAGS
+            # -Iinclude and -Isrc are required for internal headers like nsutils/base64.h
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
-                 CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" \
-                 INCLUDES="-I$PREFIX/include -I$PWD/include -I$PWD/src" install
+                 CFLAGS="$KINDLE_CFLAGS -I$PWD/include -I$PWD/src" \
+                 LDFLAGS="$KINDLE_LDFLAGS" install
             cd ..
           done
 
