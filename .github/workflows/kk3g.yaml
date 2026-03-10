@@ -72,12 +72,13 @@ jobs:
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make install && cd ..
 
-          # 8. Mandatory NetSurf Libraries (Fix for pwrite/pread & internal headers)
+          # 8. Mandatory NetSurf Libraries (Universal Header & POSIX Fix)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA==
+          Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA==
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0
@@ -90,10 +91,11 @@ jobs:
             echo "--- Building $DIR ---"
             git clone $URL && cd $DIR
             
-            # _GNU_SOURCE enables pwrite/pread on older glibc toolchains
-            # -I include/src satisfies the internal nsutils header structure
+            # -I$PWD fixes libutf8proc (headers in root)
+            # -I$PWD/include fixes libnsutils (headers in include/nsutils)
+            # -D_GNU_SOURCE fixes pwrite/pread on Kindle toolchain
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
-                 CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I$PWD/include -I$PWD/src" \
+                 CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I$PWD -I$PWD/include -I$PWD/src" \
                  LDFLAGS="$KINDLE_LDFLAGS" install
             cd ..
           done
