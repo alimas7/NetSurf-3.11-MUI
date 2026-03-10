@@ -38,7 +38,7 @@ jobs:
           tar -xf expat.tar.gz
           cd expat-2.6.0
           ./buildconf.sh
-          ./configure --host=$HOST --prefix=$PREFIX --disable-shared
+          ./configure --host=$HOST --prefix=$PREFIX --disable-shared CPPFLAGS=-DXML_GE=1
           make install && cd ..
 
           # 2. Buildsystem
