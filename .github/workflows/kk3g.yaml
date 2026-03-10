@@ -72,7 +72,7 @@ jobs:
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make install && cd ..
 
-          # 8. Mandatory NetSurf Libraries (Comprehensive Header & POSIX Fix)
+          # 8. Mandatory NetSurf Libraries (The Final Header & POSIX Fix)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
@@ -90,11 +90,13 @@ jobs:
             echo "--- Building $DIR ---"
             git clone $URL && cd $DIR
             
-            # INCLUDES variable is the most robust way to force paths into NetSurf's Makefiles
+            # Use EXTRA_INCLUDES to APPEND paths instead of overwriting internal ones
+            # This allows libnsutils to see its own 'include/nsutils' 
+            # and libutf8proc to see its root headers.
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
                  CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE" \
                  LDFLAGS="$KINDLE_LDFLAGS" \
-                 INCLUDES="-I$PWD -I$PWD/include -I$PWD/src -I$PREFIX/include" install
+                 EXTRA_INCLUDES="-I$PWD -I$PWD/include -I$PREFIX/include" install
             cd ..
           done
 
