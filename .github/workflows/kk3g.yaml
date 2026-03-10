@@ -37,6 +37,7 @@ jobs:
           echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
           tar -xf expat.tar.gz
           cd expat-2.6.0
+          ./buildconf.sh
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
