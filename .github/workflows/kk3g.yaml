@@ -89,36 +89,25 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 8a. libparserutils (Final Fix for charset/aliases.h and mibenum.h)
+          # 8a. libparserutils (Individually handled for Header Fixes)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
           cd libparserutils
-          
-          # 1. Generate aliases.h (this step will fail compilation but generate the header)
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
-          
-          # 2. Map the generated header to where the source expects it
-          mkdir -p charset
-          cp src/charset/aliases.h charset/
-          
-          # 3. CRITICAL: Map the public include folder to the local build root
-          # This allows #include <parserutils/charset/mibenum.h> to work locally
+          mkdir -p charset && cp src/charset/aliases.h charset/
           cp -r include/parserutils .
-
-          # 4. Final build with explicit include path for the local 'parserutils' folder
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
-            CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" \
-            LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
+            CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
           cd ..
 
-          # 8b. libutf8proc (Individual build with Root Header Fix)
+          # 8b. libutf8proc (Individually handled for Path Fix)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
           cd libutf8proc
-          cp utf8proc.h src/
+          cp include/utf8proc.h src/
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
-            CFLAGS="$KINDLE_CFLAGS -Isrc" -j$(nproc) install
+            CFLAGS="$KINDLE_CFLAGS -Isrc -Iinclude" install
           cd ..
 
-          # 8c. Remaining Deduplicated Loop (Removed parserutils and utf8proc)
+          # 8c. Remaining Loop (Deduplicated)
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
           for url_b64 in $LIBS_B64; do
             URL=$(echo $url_b64 | base64 -d)
