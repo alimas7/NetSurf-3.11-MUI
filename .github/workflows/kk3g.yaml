@@ -60,8 +60,9 @@ jobs:
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared LDFLAGS="$KINDLE_LDFLAGS" CPPFLAGS="$KINDLE_CFLAGS"
           make install && cd ..
 
-          # 6. LibJPEG (Required for NetSurf images)
-          echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz          tar -xf jpeg.tar.gz && cd jpeg-9c
+          # 6. LibJPEG (Encoded Link: jpegsrc.v9e.tar.gz)
+          echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
+          tar -xf jpeg.tar.gz && cd jpeg-9e
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
