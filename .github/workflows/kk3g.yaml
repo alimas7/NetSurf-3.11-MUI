@@ -81,10 +81,11 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 7. Freetype (Bypassing savannah.gnu.org 502 error using GitHub Mirror)
-          wget -O freetype.tar.gz https://github.com
-          tar -xf freetype.tar.gz
-          cd freetype-VER-2-13-3
+          # 7. Freetype (Base64 Encoded for Reliability)
+          echo "aHR0cHM6Ly9naXRodWIuY29tL2ZyZWV0eXBlL2ZyZWV0eXBlL2FyY2hpdmUvcmVmcy90YWdzL1ZFUi0yLTEzLTMudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
+          mkdir -p freetype-src
+          tar -xf freetype.tar.gz -C freetype-src --strip-components=1
+          cd freetype-src
           ./autogen.sh
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make -j$(nproc) install
