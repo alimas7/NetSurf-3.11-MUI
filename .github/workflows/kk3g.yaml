@@ -94,9 +94,8 @@ jobs:
             # This allows libnsutils to see its own 'include/nsutils' 
             # and libutf8proc to see its root headers.
             make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
-                 CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE" \
-                 LDFLAGS="$KINDLE_LDFLAGS" \
-                 EXTRA_INCLUDES="-I$PWD -I$PWD/include -I$PREFIX/include" install
+                 CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I$PWD/include -I$PWD -I$PREFIX/include" \
+                 LDFLAGS="$KINDLE_LDFLAGS" install
             cd ..
           done
 
