@@ -99,12 +99,17 @@ jobs:
             CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
           cd ..
 
-          # 8b. libutf8proc (Manual root header fix)
+          # 8b. libutf8proc (Restoring your FIND logic)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
           cd libutf8proc
-          cp utf8proc.h src/ || cp include/utf8proc.h src/ || true
+          
+          # Use your original approach: find the header and copy it where the compiler looks
+          find . -name "utf8proc.h" -exec cp {} . \;
+          find . -name "utf8proc.h" -exec cp {} src/ \;
+          
+          # Build with explicit local includes
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
-            CFLAGS="$KINDLE_CFLAGS -Isrc -I." install
+            CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install
           cd ..
 
           # 8c. Remaining Loop
