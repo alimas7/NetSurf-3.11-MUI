@@ -89,15 +89,25 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 8a. libparserutils (Individual build with Header Fix)
+          # 8a. libparserutils (Final Fix for charset/aliases.h and mibenum.h)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
           cd libparserutils
-          # Build once to generate headers
+          
+          # 1. Generate aliases.h (this step will fail compilation but generate the header)
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
-          mkdir -p charset && cp src/charset/aliases.h charset/
-          # Final build
+          
+          # 2. Map the generated header to where the source expects it
+          mkdir -p charset
+          cp src/charset/aliases.h charset/
+          
+          # 3. CRITICAL: Map the public include folder to the local build root
+          # This allows #include <parserutils/charset/mibenum.h> to work locally
+          cp -r include/parserutils .
+
+          # 4. Final build with explicit include path for the local 'parserutils' folder
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
-            CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
+            CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" \
+            LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
           cd ..
 
           # 8b. libutf8proc (Individual build with Root Header Fix)
