@@ -89,7 +89,7 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 8a. libparserutils (Individually handled for Header Fixes)
+          # 8a. libparserutils (Individual build with Header Fixes)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
           cd libparserutils
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
@@ -99,12 +99,13 @@ jobs:
             CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
           cd ..
 
-          # 8b. libutf8proc (Individually handled for Path Fix)
+          # 8b. libutf8proc (Individual build - Fix for root header)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
           cd libutf8proc
-          cp include/utf8proc.h src/
+          # Fix: In this repo, utf8proc.h is in the root, not in include/
+          cp utf8proc.h src/
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
-            CFLAGS="$KINDLE_CFLAGS -Isrc -Iinclude" install
+            CFLAGS="$KINDLE_CFLAGS -Isrc -I." install
           cd ..
 
           # 8c. Remaining Loop (Deduplicated)
