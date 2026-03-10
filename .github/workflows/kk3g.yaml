@@ -118,7 +118,7 @@ jobs:
         cd ..
       done
 
-      # 9. NetSurf framebuffer
+      # 9. NetSurf framebuffer (Fixed Build/Install Race & Binary Name)
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
       cd netsurf
       cat <<EOF > Makefile.config
@@ -128,9 +128,25 @@ jobs:
       override NETSURF_FB_FONTLIB := freetype
       override NETSURF_USE_FREETYPE := YES
       EOF
-      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc) install
-      ${HOST}-strip $PREFIX/bin/netsurf
-      echo -e '#!/bin/sh\nexport LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH\n./bin/netsurf -b 8 -f /dev/fb0 "https://www.google.com"' > $PREFIX/bin/netsurf.sh
+
+      # Build first to ensure the binary exists before 'make install' attempts to move it
+      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc \
+        CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc)
+      
+      # Now install safely
+      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc \
+        CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" install
+
+      # The binary is usually named 'nsfb' in the framebuffer frontend
+      if [ -f $PREFIX/bin/nsfb ]; then
+        ${HOST}-strip $PREFIX/bin/nsfb
+        # Create a symlink or rename for your convenience
+        ln -sf nsfb $PREFIX/bin/netsurf
+      elif [ -f $PREFIX/bin/netsurf ]; then
+        ${HOST}-strip $PREFIX/bin/netsurf
+      fi
+
+      echo -e '#!/bin/sh\nexport LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH\n./bin/nsfb -b 8 -f /dev/fb0 "https://www.google.com"' > $PREFIX/bin/netsurf.sh
       chmod +x $PREFIX/bin/netsurf.sh
 
    - name: Upload Artifacts
