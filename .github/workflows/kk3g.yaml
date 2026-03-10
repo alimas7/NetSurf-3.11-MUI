@@ -81,12 +81,10 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 7. Freetype (NOW ENCODED)
-          echo "aHR0cHM6Ly9naXRodWIuY29tL2ZyZWV0eXBlL2ZyZWV0eXBlL2FyY2hpdmUvcmVmcy90YWdzL1ZFUi0yLTEzLTMudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
-          mkdir -p freetype-src
-          tar -xf freetype.tar.gz -C freetype-src --strip-components=1
-          cd freetype-src
-          ./autogen.sh
+          # 7. Freetype (Official Release Tarball - No submodules required)
+          echo "aHR0cHM6Ly9kb3dubG9hZC5zYXZhbm5haC5nbnUub3JnL3JlbGVhc2VzL2ZyZWV0eXBlL2ZyZWV0eXBlLTIuMTMuMy50YXIuZ3o=" | base64 -d | xargs wget -O freetype.tar.gz
+          tar -xf freetype.tar.gz
+          cd freetype-2.13.3
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make -j$(nproc) install
           cd ..
