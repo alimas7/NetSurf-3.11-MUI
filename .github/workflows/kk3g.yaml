@@ -91,7 +91,7 @@ jobs:
             git clone $URL && cd $DIR
 
             # Manual fix for libutf8proc header location
-            [ "$DIR" = "libutf8proc" ] && mkdir -p include && find /home/runner/work/NetSurf-3.11-MUI -name utf8proc.h && cp utf8proc.h include/
+            [ "$DIR" = "libutf8proc" ] && mkdir -p include && find /home/runner/work/NetSurf-3.11-MUI -name utf8proc.h && cp /home/runner/work/NetSurf-3.11-MUI/NetSurf-3.11-MUI/libutf8proc/include/libutf8proc/utf8proc.h include/
 
             # Use EXTRA_INCLUDES to APPEND paths instead of overwriting internal ones
             # This allows libnsutils to see its own 'include/nsutils' 
