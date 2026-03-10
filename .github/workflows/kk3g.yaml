@@ -89,7 +89,10 @@ jobs:
             DIR=$(basename $URL .git)
             echo "--- Building $DIR ---"
             git clone $URL && cd $DIR
-            
+
+            # Manual fix for libutf8proc header location
+            [ "$DIR" = "libutf8proc" ] && mkdir -p include && cp utf8proc.h include/
+
             # Use EXTRA_INCLUDES to APPEND paths instead of overwriting internal ones
             # This allows libnsutils to see its own 'include/nsutils' 
             # and libutf8proc to see its root headers.
