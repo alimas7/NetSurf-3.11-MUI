@@ -89,18 +89,26 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 8a. libparserutils (Fixed Header Issue)
+          # 8a. libparserutils (Fixed Header and Include Path Issue)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
           cd libparserutils
-          # Build once to generate headers
+          
+          # 1. Build once to generate aliases.h and other headers
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
-          # Manual fix: create the internal header structure the source expects
+          
+          # 2. Fix: Create the folder structure the source code expects for local includes
           mkdir -p charset
           cp src/charset/aliases.h charset/aliases.h
-          # Final build and install with the fix
+          
+          # 3. Fix: Create the 'parserutils' symlink so <parserutils/charset/mibenum.h> works
+          mkdir -p include/parserutils
+          ln -s ../../include/parserutils include/parserutils/ 2>/dev/null || true # handle existing
+          cp -r include/parserutils .
+          
+          # 4. Final build and install with explicit include paths
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
             CC=$CC BUILD_CC=gcc \
-            CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Isrc" \
+            CFLAGS="$KINDLE_CFLAGS -D_GNU_SOURCE -I. -Iinclude -Isrc" \
             LDFLAGS="$KINDLE_LDFLAGS" \
             -j$(nproc) install
           cd ..
