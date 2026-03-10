@@ -22,6 +22,7 @@ jobs:
           tar -xf kindle.tar.gz -C $HOME
           echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
+
       - name: Build NetSurf Stack
         run: |
           export HOST=arm-kindle-linux-gnueabi
@@ -52,14 +53,14 @@ jobs:
           cd ..
           export PATH=$PREFIX/bin:$PATH
 
-          # 4. LibPNG (Direct Link)
-          wget https://download.sourceforge.net -O libpng.tar.gz
+          # 4. LibPNG (Encoded Link: libpng-1.6.44.tar.gz)
+          echo "aHR0cHM6Ly9kb3dubG9hZC5zb3VyY2Vmb3JnZS5uZXQvcHJvamVjdC9saWJwbmcvbGlicG5nMTYvMS42LjQ0L2xpYnBuZy0xLjYuNDQudGFyLmd6" | base64 -d | xargs wget -O libpng.tar.gz
           tar -xf libpng.tar.gz && cd libpng-1.6.44
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
-          # 5. Freetype (Direct Link)
-          wget https://download.savannah.gnu.org -O freetype.tar.gz
+          # 5. Freetype (Encoded Link: freetype-2.13.3.tar.gz)
+          echo "aHR0cHM6Ly9kb3dubG9hZC5zYXZhbm5haC5nbnUub3JnL3JlbGVhc2VzL2ZyZWV0eXBlL2ZyZWV0eXBlLTIuMTMuMy50YXIuZ3o=" | base64 -d | xargs wget -O freetype.tar.gz
           tar -xf freetype.tar.gz && cd freetype-2.13.3
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make install && cd ..
