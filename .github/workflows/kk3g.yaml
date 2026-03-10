@@ -33,30 +33,35 @@ jobs:
           export LDFLAGS="-L$PREFIX/lib"
           export CFLAGS="-DXML_GE=1 -I$PREFIX/include"
           
-          mkdir -p $PREFIX/include
+          mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig
 
           # 1. Expat
           echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
-          tar -xf expat.tar.gz
-          cd expat-2.6.0
-          ./buildconf.sh
+          tar -xf expat.tar.gz && cd expat-2.6.0
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared
           make install && cd ..
 
-          # 2. Buildsystem
+          # 2. Buildsystem & nsgenbind (Host Build)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
           cd buildsystem && make install PREFIX=$PREFIX && cd ..
-
-          # 3. nsgenbind (FORCE HOST BUILD)
+          
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
-          cd nsgenbind
-          # Set HOST to the runner's architecture to prevent "Failed to guess HOST"
-          # and override CC to the local gcc.
-          make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install
-          cd ..
+          cd nsgenbind && make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install && cd ..
           export PATH=$PREFIX/bin:$PATH
 
-          # 4. Build Mandatory Libraries
+          # 3. LibPNG (Required for Freetype and NetSurf)
+          wget https://download.sourceforge.net
+          tar -xf libpng-1.6.40.tar.gz && cd libpng-1.6.40
+          ./configure --host=$HOST --prefix=$PREFIX --disable-shared
+          make install && cd ..
+
+          # 4. Freetype (Crucial for E-Ink fonts)
+          wget https://download.savannah.gnu.org
+          tar -xf freetype-2.13.2.tar.gz && cd freetype-2.13.2
+          ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
+          make install && cd ..
+
+          # 5. Mandatory NetSurf Libraries
           LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ=
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0
           Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0
@@ -71,25 +76,32 @@ jobs:
           for url_b64 in $LIBS_B64; do
             URL=$(echo $url_b64 | base64 -d)
             DIR=$(basename $URL .git)
-            git clone $URL
-            cd $DIR
-            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE install
-            cd ..
+            git clone $URL && cd $DIR
+            make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE install && cd ..
           done
 
-          # 5. NetSurf Browser
+          # 6. NetSurf Browser with Kindle/E-Ink Optimizations
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
+          
           cat <<EOF > Makefile.config
+          # Disable heavy features
           override NETSURF_USE_RSVG := NO
           override NETSURF_USE_NSSVG := NO
           override NETSURF_USE_VIDEO := NO
+          
+          # Force Freetype for clean E-Ink text
           override NETSURF_FB_FONTLIB := freetype
+          override NETSURF_USE_FREETYPE := YES
+          
+          # Optimization for E-Ink (Greyscale/FB)
+          override NETSURF_FB_BPP := 8
           EOF
 
           make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE \
                BUILD_CC=gcc XCFLAGS="-DXML_GE=1" install
-
+          
+          # Strip symbols to save space on Kindle
           ${HOST}-strip $PREFIX/bin/netsurf
 
       - name: Upload Artifacts
