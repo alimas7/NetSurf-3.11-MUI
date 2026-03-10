@@ -81,10 +81,11 @@ jobs:
           make -j$(nproc) install
           cd ..
 
-          # 7. Freetype
-          echo "aHR0cHM6Ly9kb3dubG9hZC5zYXZhbm5haC5nbnUub3JnL3JlbGVhc2VzL2ZyZWV0eXBlL2ZyZWV0eXBlLTIuMTMuMy50YXIuZ3o=" | base64 -d | xargs wget -O freetype.tar.gz
+          # 7. Freetype (Bypassing savannah.gnu.org 502 error using GitHub Mirror)
+          wget -O freetype.tar.gz https://github.com
           tar -xf freetype.tar.gz
-          cd freetype-2.13.3
+          cd freetype-VER-2-13-3
+          ./autogen.sh
           ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
           make -j$(nproc) install
           cd ..
@@ -102,7 +103,6 @@ jobs:
           # 8b. libutf8proc (Individual build - Fix for root header)
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
           cd libutf8proc
-          # Fix: In this repo, utf8proc.h is in the root, not in include/
           cp utf8proc.h src/
           make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc \
             CFLAGS="$KINDLE_CFLAGS -Isrc -I." install
@@ -113,7 +113,6 @@ jobs:
           for url_b64 in $LIBS_B64; do
             URL=$(echo $url_b64 | base64 -d)
             DIR=$(basename $URL .git)
-            echo "--- Building $DIR ---"
             git clone $URL
             cd $DIR
             for d in $(find src -maxdepth 1 -type d -not -path 'src'); do
