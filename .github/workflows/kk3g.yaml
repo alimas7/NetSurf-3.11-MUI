@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (The Real Fix)
+name: Build NetSurf for Kindle K3 (Fixed & Unabridged)
 on: workflow_dispatch
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v28-${{ hashFiles('.github/workflows/*.yaml') }} # MODIFIED (v28)
+      key: ${{ runner.os }}-ext-libs-v29-${{ hashFiles('.github/workflows/*.yaml') }} # MODIFIED (v29)
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -51,19 +51,17 @@ jobs:
       export HOST=arm-kindle-linux-gnueabi
       export CC=${HOST}-gcc
       export PATH=$PREFIX/bin:$PATH
-      # MODIFIED: Standard cross-compile pkg-config setup
+      # MODIFIED: Use the toolchain sysroot for library discovery
       export PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig:$SYSROOT/lib/pkgconfig
       export PKG_CONFIG_SYSROOT_DIR=$SYSROOT
       
       mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
 
-      # [1-2. Buildsystem & nsgenbind]
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
       cd buildsystem && make install PREFIX=$PREFIX && cd ..
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
       cd nsgenbind && make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install && cd ..
       
-      # [3-6. Zlib, Expat, PNG, JPEG]
       echo "aHR0cHM6Ly9naXRodWIuY29tL21hZGxlci96bGliL3JlbGVhc2VzL2Rvd25sb2FkL3YxLjMuMS96bGliLTEuMy4xLnRhci5neg==" | base64 -d | xargs wget -O zlib.tar.gz
       tar -xf zlib.tar.gz && cd zlib-1.3.1 && CHOST=$HOST ./configure --prefix=$PREFIX --static && make -j$(nproc) install && cd ..
       echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
@@ -73,16 +71,15 @@ jobs:
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # 7. Freetype 2.14.2
-      # wget https://download.savannah.gnu.org # DELETED
+      # Freetype 2.14.2
+      # echo "aHR0cHM6Ly9kb3dubG9hZC5zYXZhbm5haC5nbnUub3JnL3JlbGVhc2VzL2ZyZWV0eXBlL2ZyZWV0eXBlLTIuMTQuMi50YXIuZ3o=" | base64 -d | xargs wget -O freetype.tar.gz # DELETED (502 Error)
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz # NEW (Mirror)
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # 8. LibCurl
+      # LibCurl
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
-      # ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl # DELETED
-      # NEW: Using pkg-config discovery and pre-answering execution tests
+      # NEW: Skip execution tests and provide explicit system paths
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib=$PREFIX \
         ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes \
         CPPFLAGS="-I$SYSROOT/usr/include -I$PREFIX/include" \
@@ -97,19 +94,13 @@ jobs:
       export CC=${HOST}-gcc
       export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
       export PATH=$PREFIX/bin:$PATH
-      
-      # libparserutils
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
       cd libparserutils && make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include" || true
       mkdir -p charset && cp src/charset/aliases.h charset/ && cp -r include/parserutils .
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-      
-      # libutf8proc
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
       cd libutf8proc && find . -name "utf8proc.h" -exec cp {} . \; && find . -name "utf8proc.h" -exec cp {} src/ \;
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-      
-      # Remaining Libs Loop
       LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
       for url_b64 in $LIBS_B64; do
         URL=$(echo $url_b64 | base64 -d)
