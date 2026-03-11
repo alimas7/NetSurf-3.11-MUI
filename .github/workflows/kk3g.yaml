@@ -1,9 +1,11 @@
-name: Build NetSurf for Kindle K3 (Full Cached Fix)
+name: Build NetSurf for Kindle K3 (Full Granular Cache)
 on: workflow_dispatch
 
 jobs:
  build-kindle:
   runs-on: ubuntu-latest
+  env:
+    PREFIX: ${{ github.workspace }}/kindle-root
   steps:
    - name: Checkout Code
      uses: actions/checkout@v4
@@ -16,33 +18,41 @@ jobs:
       help2man gawk texinfo libncurses-dev libtool libtool-bin \
       autoconf automake gettext ncurses-dev
 
-   - name: Cache Build Artifacts
-     id: cache-netsurf
+   - name: Cache Toolchain
+     id: cache-toolchain
      uses: actions/cache@v4
      with:
-      path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-netsurf-v3-${{ hashFiles('.github/workflows/*.yaml') }}
+      path: ~/x-tools
+      key: kindle-toolchain-v2
 
-   - name: Download Pre-built Kindle Toolchain
+   - name: Download Toolchain
+     if: steps.cache-toolchain.outputs.cache-hit != 'true'
      run: |
       echo "aHR0cHM6Ly9naXRodWIuY29tL2tvcmVhZGVyL2tveHRvb2xjaGFpbi9yZWxlYXNlcy9kb3dubG9hZC8yMDI1LjA1L2tpbmRsZS50YXIuZ3o=" | base64 -d | xargs wget -O kindle.tar.gz
       tar -xf kindle.tar.gz -C $HOME
-      echo "KINDLE_TC_PATH=$HOME/x-tools/arm-kindle-linux-gnueabi" >> $GITHUB_ENV
-      echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
 
-   - name: Build NetSurf Stack
-     if: steps.cache-netsurf.outputs.cache-hit != 'true'
+   - name: Set Environment Paths
+     run: |
+      echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
+      echo "NSSHARE=$PREFIX/share/netsurf-buildsystem" >> $GITHUB_ENV
+
+   - name: Cache Compiled Libraries
+     id: cache-libs
+     uses: actions/cache@v4
+     with:
+      path: ${{ github.workspace }}/kindle-root
+      key: ${{ runner.os }}-netsurf-libs-v5-${{ hashFiles('.github/workflows/*.yaml') }}
+
+   - name: Build All Dependencies
+     if: steps.cache-libs.outputs.cache-hit != 'true'
      run: |
       set -e
       export HOST=arm-kindle-linux-gnueabi
       export CC=${HOST}-gcc
-      export PREFIX=$GITHUB_WORKSPACE/kindle-root
       export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-      export NSSHARE=$PREFIX/share/netsurf-buildsystem
       export PATH=$PREFIX/bin:$PATH
-      KINDLE_CFLAGS="-DXML_GE=1 -I$PREFIX/include"
+      KINDLE_CFLAGS="-I$PREFIX/include"
       KINDLE_LDFLAGS="-L$PREFIX/lib"
-      
       mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
 
       # 1. Expat
@@ -83,7 +93,7 @@ jobs:
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes
       make -j$(nproc) install && cd ..
 
-      # 8a. libparserutils (Manual header fix)
+      # 8a. libparserutils
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
       cd libparserutils
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
@@ -100,13 +110,18 @@ jobs:
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install
       cd ..
 
-      # 8c. Remaining Loop (Fixed for libcss duplicates)
+      # 8c. LibCurl (Cross-compiled for Kindle)
+      echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
+      tar -xf curl.tar.gz && cd curl-8.6.0
+      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl
+      make -j$(nproc) install && cd ..
+
+      # 8d. Remaining NetSurf Libs Loop
       LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
       for url_b64 in $LIBS_B64; do
         URL=$(echo $url_b64 | base64 -d)
         DIR=$(basename $URL .git)
         git clone $URL && cd $DIR
-        # Only symlink internal headers if they aren't libcss
         if [ "$DIR" != "libcss" ]; then
           for d in $(find src -maxdepth 1 -type d -not -path 'src'); do
             ln -s $d $(basename $d) 2>/dev/null || true
@@ -118,7 +133,16 @@ jobs:
         cd ..
       done
 
-      # 9. NetSurf framebuffer (Fixed Build/Install Race & Binary Name)
+   - name: Build NetSurf App
+     run: |
+      set -e
+      export HOST=arm-kindle-linux-gnueabi
+      export CC=${HOST}-gcc
+      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+      export PATH=$PREFIX/bin:$PATH
+      KINDLE_CFLAGS="-I$PREFIX/include"
+      KINDLE_LDFLAGS="-L$PREFIX/lib"
+
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
       cd netsurf
       cat <<EOF > Makefile.config
@@ -128,24 +152,13 @@ jobs:
       override NETSURF_FB_FONTLIB := freetype
       override NETSURF_USE_FREETYPE := YES
       EOF
-
-      # Build first to ensure the binary exists before 'make install' attempts to move it
-      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc \
-        CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc)
       
-      # Now install safely
-      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc \
-        CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" install
-
-      # The binary is usually named 'nsfb' in the framebuffer frontend
-      if [ -f $PREFIX/bin/nsfb ]; then
-        ${HOST}-strip $PREFIX/bin/nsfb
-        # Create a symlink or rename for your convenience
-        ln -sf nsfb $PREFIX/bin/netsurf
-      elif [ -f $PREFIX/bin/netsurf ]; then
-        ${HOST}-strip $PREFIX/bin/netsurf
-      fi
-
+      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" LDFLAGS="$KINDLE_LDFLAGS" -j$(nproc)
+      make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc install
+      
+      [ -f $PREFIX/bin/nsfb ] && ${HOST}-strip $PREFIX/bin/nsfb
+      [ -f $PREFIX/bin/netsurf ] && ${HOST}-strip $PREFIX/bin/netsurf
+      
       echo -e '#!/bin/sh\nexport LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH\n./bin/nsfb -b 8 -f /dev/fb0 "https://www.google.com"' > $PREFIX/bin/netsurf.sh
       chmod +x $PREFIX/bin/netsurf.sh
 
