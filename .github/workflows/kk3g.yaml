@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (Full Unabridged Fix)
+name: Build NetSurf for Kindle K3 (Full Unabridged Fix v4)
 on: workflow_dispatch
 
 jobs:
@@ -36,13 +36,14 @@ jobs:
       echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
       echo "NSSHARE=$PREFIX/share/netsurf-buildsystem" >> $GITHUB_ENV
       echo "TC_USR=$HOME/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot/usr" >> $GITHUB_ENV # NEW
+      echo "TC_LIB=$HOME/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot/lib" >> $GITHUB_ENV # NEW
 
    - name: Cache External Libraries
      id: cache-ext-libs
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v22-${{ hashFiles('.github/workflows/*.yaml') }} # MODIFIED (Incremented)
+      key: ${{ runner.os }}-ext-libs-v24-${{ hashFiles('.github/workflows/*.yaml') }} # MODIFIED (Incremented)
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -50,47 +51,36 @@ jobs:
       set -e
       export HOST=arm-kindle-linux-gnueabi
       export CC=${HOST}-gcc
-      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig:$TC_USR/lib/pkgconfig # MODIFIED
+      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig:$TC_USR/lib/pkgconfig
       export PATH=$PREFIX/bin:$PATH
       mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
 
-      # 1. NetSurf Buildsystem
+      # Buildsystem & Tools
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
       cd buildsystem && make install PREFIX=$PREFIX && cd ..
-
-      # 2. nsgenbind (Host tool)
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
       cd nsgenbind && make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install && cd ..
       
-      # 3. Zlib
+      # Core Libs
       echo "aHR0cHM6Ly9naXRodWIuY29tL21hZGxlci96bGliL3JlbGVhc2VzL2Rvd25sb2FkL3YxLjMuMS96bGliLTEuMy4xLnRhci5neg==" | base64 -d | xargs wget -O zlib.tar.gz
       tar -xf zlib.tar.gz && cd zlib-1.3.1 && CHOST=$HOST ./configure --prefix=$PREFIX --static && make -j$(nproc) install && cd ..
-      
-      # 4. Expat
       echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
       tar -xf expat.tar.gz && cd expat-2.6.0 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
-      
-      # 5. LibPNG
       echo "aHR0cHM6Ly9kb3dubG9hZC5zb3VyY2Vmb3JnZS5uZXQvcHJvamVjdC9saWJwbmcvbGlicG5nMTYvMS42LjQ0L2xpYnBuZy0xLjYuNDQudGFyLmd6" | base64 -d | xargs wget -O libpng.tar.gz
       tar -xf libpng.tar.gz && cd libpng-1.6.44 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared LDFLAGS="-L$PREFIX/lib" CPPFLAGS="-I$PREFIX/include" && make -j$(nproc) install && cd ..
-      
-      # 6. LibJPEG
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # 7. Freetype 2.14.2
-      # echo "aHR0cHM6Ly9kb3dubG9hZC5zYXZhbm5haC5nbnUub3JnL3JlbGVhc2VzL2ZyZWV0eXBlL2ZyZWV0eXBlLTIuMTQuMi50YXIuZ3o=" | base64 -d | xargs wget -O freetype.tar.gz # DELETED (502 Error)
+      # Freetype 2.14.2 Mirror
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz # NEW (Wayback Mirror)
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # 8. LibCurl
+      # LibCurl FIX: Use --with-openssl pointing to sysroot/usr and base lib discovery
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
-      # ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl # DELETED (Caused cross-compile test failure)
-      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib \
+      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl=$TC_USR --with-zlib=$PREFIX \
         CPPFLAGS="-I$TC_USR/include -I$PREFIX/include" \
-        LDFLAGS="-L$TC_USR/lib -L$PREFIX/lib" \
-        PKG_CONFIG="" LIBS="-lssl -lcrypto -lz -lpthread -ldl" # NEW: Forced linkage to bypass prefix checks
+        LDFLAGS="-L$TC_USR/lib -L$TC_LIB -L$PREFIX/lib" # MODIFIED (Added TC_LIB for crypto search)
       make -j$(nproc) install && cd ..
 
    - name: Build NetSurf Libraries
@@ -114,7 +104,7 @@ jobs:
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
       
       # Remaining Libs Loop
-      LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
+      LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nl0cmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
       for url_b64 in $LIBS_B64; do
         URL=$(echo $url_b64 | base64 -d)
         DIR=$(basename $URL .git)
