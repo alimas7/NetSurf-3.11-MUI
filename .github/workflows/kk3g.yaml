@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (Final Fixed v3)
+name: Build NetSurf for Kindle K3 (Fixed Curl Cross-Compile)
 on: workflow_dispatch
 
 jobs:
@@ -35,7 +35,6 @@ jobs:
      run: |
       echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
       echo "NSSHARE=$PREFIX/share/netsurf-buildsystem" >> $GITHUB_ENV
-      # Pointing to the specific sysroot directory for headers/libs
       echo "TC_USR=$HOME/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot/usr" >> $GITHUB_ENV
 
    - name: Cache External Libraries
@@ -43,7 +42,7 @@ jobs:
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v11-${{ hashFiles('.github/workflows/*.yaml') }}
+      key: ${{ runner.os }}-ext-libs-v13-${{ hashFiles('.github/workflows/*.yaml') }}
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -51,10 +50,8 @@ jobs:
       set -e
       export HOST=arm-kindle-linux-gnueabi
       export CC=${HOST}-gcc
-      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig:$TC_USR/lib/pkgconfig
       export PATH=$PREFIX/bin:$PATH
-      KINDLE_CFLAGS="-I$PREFIX/include"
-      KINDLE_LDFLAGS="-L$PREFIX/lib"
       mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
 
       # Buildsystem & Tools
@@ -63,25 +60,27 @@ jobs:
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
       cd nsgenbind && make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install && cd ..
       
-      # Core Libs
+      # Core Libs (Zlib, Expat, PNG, JPEG)
       echo "aHR0cHM6Ly9naXRodWIuY29tL21hZGxlci96bGliL3JlbGVhc2VzL2Rvd25sb2FkL3YxLjMuMS96bGliLTEuMy4xLnRhci5neg==" | base64 -d | xargs wget -O zlib.tar.gz
       tar -xf zlib.tar.gz && cd zlib-1.3.1 && CHOST=$HOST ./configure --prefix=$PREFIX --static && make -j$(nproc) install && cd ..
       echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
       tar -xf expat.tar.gz && cd expat-2.6.0 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       echo "aHR0cHM6Ly9kb3dubG9hZC5zb3VyY2Vmb3JnZS5uZXQvcHJvamVjdC9saWJwbmcvbGlicG5nMTYvMS42LjQ0L2xpYnBuZy0xLjYuNDQudGFyLmd6" | base64 -d | xargs wget -O libpng.tar.gz
-      tar -xf libpng.tar.gz && cd libpng-1.6.44 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared LDFLAGS="$KINDLE_LDFLAGS" CPPFLAGS="$KINDLE_CFLAGS" && make -j$(nproc) install && cd ..
+      tar -xf libpng.tar.gz && cd libpng-1.6.44 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared LDFLAGS="-L$PREFIX/lib" CPPFLAGS="-I$PREFIX/include" && make -j$(nproc) install && cd ..
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # Freetype 2.14.2 (Rabisu Mirror)
+      # Freetype 2.14.2 (Mirror)
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # LibCurl FIX: Pass OpenSSL paths directly to bypass bad prefix detection
+      # LibCurl FORCE: bypass path check by providing raw libs/includes
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib \
-        CPPFLAGS="-I$TC_USR/include" LDFLAGS="-L$TC_USR/lib"
+        CPPFLAGS="-I$TC_USR/include -I$PREFIX/include" \
+        LDFLAGS="-L$TC_USR/lib -L$PREFIX/lib" \
+        LIBS="-lssl -lcrypto -lz -lpthread -ldl"
       make -j$(nproc) install && cd ..
 
    - name: Build NetSurf Libraries
@@ -92,19 +91,16 @@ jobs:
       export CC=${HOST}-gcc
       export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
       export PATH=$PREFIX/bin:$PATH
-      KINDLE_CFLAGS="-I$PREFIX/include -D_GNU_SOURCE"
-      KINDLE_LDFLAGS="-L$PREFIX/lib"
       
-      # libparserutils
+      # libparserutils, libutf8proc, etc.
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
-      cd libparserutils && make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
+      cd libparserutils && make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include" || true
       mkdir -p charset && cp src/charset/aliases.h charset/ && cp -r include/parserutils .
-      make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install && cd ..
+      make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
       
-      # libutf8proc
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
       cd libutf8proc && find . -name "utf8proc.h" -exec cp {} . \; && find . -name "utf8proc.h" -exec cp {} src/ \;
-      make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install && cd ..
+      make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
       
       LIBS_B64="Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnN1dGlscy5naXQ= Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlid2FwY2FwbGV0LmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliaHViYnViLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliY3NzLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGliZG9tLmdpdA== Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNibXAuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNnaWYuZ2l0 Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlibnNmYi5naXQ="
       for url_b64 in $LIBS_B64; do
@@ -115,7 +111,7 @@ jobs:
           for d in $(find src -maxdepth 1 -type d -not -path 'src'); do ln -s $d $(basename $d) 2>/dev/null || true; done
           [ -d "include/$DIR" ] && ln -s include/$DIR $DIR 2>/dev/null || true
         fi
-        make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc -Iinclude -I$PREFIX/include" LDFLAGS="$KINDLE_LDFLAGS" install && cd ..
+        make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -D_GNU_SOURCE -I. -Isrc -Iinclude" LDFLAGS="-L$PREFIX/lib" install && cd ..
       done
 
    - name: Build NetSurf Final
