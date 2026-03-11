@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (Final Fixed v2)
+name: Build NetSurf for Kindle K3 (Full Unabridged Fixed)
 on: workflow_dispatch
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v9-${{ hashFiles('.github/workflows/*.yaml') }}
+      key: ${{ runner.os }}-ext-libs-v10-${{ hashFiles('.github/workflows/*.yaml') }}
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -50,7 +50,7 @@ jobs:
       set -e
       export HOST=arm-kindle-linux-gnueabi
       export CC=${HOST}-gcc
-      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig
       export PATH=$PREFIX/bin:$PATH
       KINDLE_CFLAGS="-I$PREFIX/include"
       KINDLE_LDFLAGS="-L$PREFIX/lib"
@@ -72,14 +72,15 @@ jobs:
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # Freetype 2.14.2 Rabisu Mirror
+      # Freetype 2.14.2 Rabisu Mirror via Wayback
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # LibCurl FIX: Use sysroot/usr base
+      # LibCurl FIX: Use pkg-config for OpenSSL discovery instead of path prefix
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
-      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl=$SYSROOT/usr --with-zlib=$PREFIX
+      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib \
+        CPPFLAGS="-I$SYSROOT/usr/include" LDFLAGS="-L$SYSROOT/usr/lib"
       make -j$(nproc) install && cd ..
 
    - name: Build NetSurf Libraries
