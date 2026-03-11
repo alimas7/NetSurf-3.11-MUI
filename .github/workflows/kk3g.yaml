@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (Fixed Compiler Error)
+name: Build NetSurf for Kindle K3 (Fixed v3)
 on: workflow_dispatch
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v14-${{ hashFiles('.github/workflows/*.yaml') }}
+      key: ${{ runner.os }}-ext-libs-v15-${{ hashFiles('.github/workflows/*.yaml') }}
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -54,7 +54,7 @@ jobs:
       export PATH=$PREFIX/bin:$PATH
       mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
 
-      # NetSurf Build Tools
+      # Buildsystem & Tools
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
       cd buildsystem && make install PREFIX=$PREFIX && cd ..
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
@@ -70,14 +70,15 @@ jobs:
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # Freetype 2.14.2 (Mirror)
+      # Freetype 2.14.2 (Rabisu Mirror via Wayback)
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # LibCurl - Cleaned up to fix "C compiler cannot create executables"
+      # LibCurl FIX: Use pkg-config discovery with explicit fallback path
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
-      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl=$TC_USR --with-zlib=$PREFIX
+      ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib \
+        CPPFLAGS="-I$TC_USR/include" LDFLAGS="-L$TC_USR/lib"
       make -j$(nproc) install && cd ..
 
    - name: Build NetSurf Libraries
