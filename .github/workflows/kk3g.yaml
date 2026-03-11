@@ -82,7 +82,7 @@ jobs:
           echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
           tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
           
-          # Freetype (FIX: Explicitly linking local libpng and zlib)
+          # Freetype (FIX: Using variables to bypass png-config check)
           echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
           tar -xf freetype.tar.gz && cd freetype-2.14.2
           ./configure --host=$HOST --prefix=$PREFIX \
@@ -93,12 +93,12 @@ jobs:
           ZLIB_LIBS="-L$PREFIX/lib -lz"
           make -j$(nproc) install && cd ..
           
-          # LibCurl (FIX: Explicitly point to OpenSSL path)
+          # LibCurl (FIX: Pointed to base SYSROOT as OpenSSL prefix)
           echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
           tar -xf curl.tar.gz && cd curl-8.6.0
           ./configure --host=$HOST --prefix=$PREFIX \
           --disable-shared \
-          --with-openssl="$SYSROOT/usr" \
+          --with-openssl="$SYSROOT" \
           --with-zlib=$PREFIX \
           ac_cv_func_malloc_0_nonnull=yes \
           ac_cv_func_realloc_0_nonnull=yes \
