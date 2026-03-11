@@ -53,7 +53,7 @@ jobs:
           export HOST=arm-kindle-linux-gnueabi
           export CC=${HOST}-gcc
           export PATH=$PREFIX/bin:$PATH
-          export PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig:$SYSROOT/lib/pkgconfig
+          export PKG_CONFIG_LIBDIR=$PREFIX/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig
           export PKG_CONFIG_SYSROOT_DIR=$SYSROOT
           
           mkdir -p $PREFIX/include $PREFIX/lib/pkgconfig $PREFIX/share
@@ -82,16 +82,18 @@ jobs:
           echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
           tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
           
-          # Freetype 2.14.2
+          # Freetype (FIX: Explicitly linking local libpng and zlib)
           echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
           tar -xf freetype.tar.gz && cd freetype-2.14.2
           ./configure --host=$HOST --prefix=$PREFIX \
           --disable-shared --with-png=yes --with-zlib=yes \
-          CPPFLAGS="-I$PREFIX/include" \
-          LDFLAGS="-L$PREFIX/lib"
+          LIBPNG_CFLAGS="-I$PREFIX/include" \
+          LIBPNG_LIBS="-L$PREFIX/lib -lpng16" \
+          ZLIB_CFLAGS="-I$PREFIX/include" \
+          ZLIB_LIBS="-L$PREFIX/lib -lz"
           make -j$(nproc) install && cd ..
           
-          # LibCurl
+          # LibCurl (FIX: Explicitly point to OpenSSL path)
           echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
           tar -xf curl.tar.gz && cd curl-8.6.0
           ./configure --host=$HOST --prefix=$PREFIX \
@@ -176,9 +178,7 @@ jobs:
       - name: Build NetSurf Final
         run: |
           set -e
-          export HOST=arm-kindle-linux-gnueabi
-          export CC=${HOST}-gcc
-          export PATH=$PREFIX/bin:$PATH
+          export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc && export PATH=$PREFIX/bin:$PATH
           echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbmV0c3VyZi5naXQ=" | base64 -d | xargs git clone
           cd netsurf
           cat <<EOF > Makefile.config
