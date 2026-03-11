@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (Fixed v3)
+name: Build NetSurf for Kindle K3 (Curl Fix)
 on: workflow_dispatch
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v15-${{ hashFiles('.github/workflows/*.yaml') }}
+      key: ${{ runner.os }}-ext-libs-v16-${{ hashFiles('.github/workflows/*.yaml') }}
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -67,18 +67,17 @@ jobs:
       tar -xf expat.tar.gz && cd expat-2.6.0 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       echo "aHR0cHM6Ly9kb3dubG9hZC5zb3VyY2Vmb3JnZS5uZXQvcHJvamVjdC9saWJwbmcvbGlicG5nMTYvMS42LjQ0L2xpYnBuZy0xLjYuNDQudGFyLmd6" | base64 -d | xargs wget -O libpng.tar.gz
       tar -xf libpng.tar.gz && cd libpng-1.6.44 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared LDFLAGS="-L$PREFIX/lib" CPPFLAGS="-I$PREFIX/include" && make -j$(nproc) install && cd ..
-      echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
-      tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # Freetype 2.14.2 (Rabisu Mirror via Wayback)
+      # Freetype 2.14.2 Rabisu Mirror via Wayback
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # LibCurl FIX: Use pkg-config discovery with explicit fallback path
+      # LibCurl FIX: Use pkg-config discovery while passing sysroot headers directly
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib \
-        CPPFLAGS="-I$TC_USR/include" LDFLAGS="-L$TC_USR/lib"
+        CPPFLAGS="-I$TC_USR/include -I$PREFIX/include" \
+        LDFLAGS="-L$TC_USR/lib -L$PREFIX/lib"
       make -j$(nproc) install && cd ..
 
    - name: Build NetSurf Libraries
