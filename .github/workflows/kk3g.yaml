@@ -1,4 +1,4 @@
-name: Build NetSurf for Kindle K3 (Full Unabridged Fixed)
+name: Build NetSurf for Kindle K3 (Final Fixed v3)
 on: workflow_dispatch
 
 jobs:
@@ -35,14 +35,15 @@ jobs:
      run: |
       echo "$HOME/x-tools/arm-kindle-linux-gnueabi/bin" >> $GITHUB_PATH
       echo "NSSHARE=$PREFIX/share/netsurf-buildsystem" >> $GITHUB_ENV
-      echo "SYSROOT=$HOME/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot" >> $GITHUB_ENV
+      # Pointing to the specific sysroot directory for headers/libs
+      echo "TC_USR=$HOME/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot/usr" >> $GITHUB_ENV
 
    - name: Cache External Libraries
      id: cache-ext-libs
      uses: actions/cache@v4
      with:
       path: ${{ github.workspace }}/kindle-root
-      key: ${{ runner.os }}-ext-libs-v10-${{ hashFiles('.github/workflows/*.yaml') }}
+      key: ${{ runner.os }}-ext-libs-v11-${{ hashFiles('.github/workflows/*.yaml') }}
 
    - name: Build All Dependencies
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
@@ -50,7 +51,7 @@ jobs:
       set -e
       export HOST=arm-kindle-linux-gnueabi
       export CC=${HOST}-gcc
-      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig
+      export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
       export PATH=$PREFIX/bin:$PATH
       KINDLE_CFLAGS="-I$PREFIX/include"
       KINDLE_LDFLAGS="-L$PREFIX/lib"
@@ -72,15 +73,15 @@ jobs:
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
       
-      # Freetype 2.14.2 Rabisu Mirror via Wayback
+      # Freetype 2.14.2 (Rabisu Mirror)
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
       
-      # LibCurl FIX: Use pkg-config for OpenSSL discovery instead of path prefix
+      # LibCurl FIX: Pass OpenSSL paths directly to bypass bad prefix detection
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl --with-zlib \
-        CPPFLAGS="-I$SYSROOT/usr/include" LDFLAGS="-L$SYSROOT/usr/lib"
+        CPPFLAGS="-I$TC_USR/include" LDFLAGS="-L$TC_USR/lib"
       make -j$(nproc) install && cd ..
 
    - name: Build NetSurf Libraries
@@ -94,11 +95,13 @@ jobs:
       KINDLE_CFLAGS="-I$PREFIX/include -D_GNU_SOURCE"
       KINDLE_LDFLAGS="-L$PREFIX/lib"
       
+      # libparserutils
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlicGFyc2VydXRpbHMuZ2l0" | base64 -d | xargs git clone
       cd libparserutils && make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS" || true
       mkdir -p charset && cp src/charset/aliases.h charset/ && cp -r include/parserutils .
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install && cd ..
       
+      # libutf8proc
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
       cd libutf8proc && find . -name "utf8proc.h" -exec cp {} . \; && find . -name "utf8proc.h" -exec cp {} src/ \;
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="$KINDLE_CFLAGS -I. -Isrc" install && cd ..
