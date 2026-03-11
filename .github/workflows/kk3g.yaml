@@ -37,70 +37,60 @@ jobs:
      with:
       path: ${{ github.workspace }}/kindle-root
       key: ${{ runner.os }}-ext-libs-v29-${{ hashFiles('.github/workflows/*.yaml') }}
-
    - name: Build Buildsystem
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export PATH=$PREFIX/bin:$PATH
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvYnVpbGRzeXN0ZW0uZ2l0" | base64 -d | xargs git clone
       cd buildsystem && make install PREFIX=$PREFIX && cd ..
-
    - name: Build Nsgenbind
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export PATH=$PREFIX/bin:$PATH
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbnNnZW5iaW5kLmdpdA==" | base64 -d | xargs git clone
       cd nsgenbind && make PREFIX=$PREFIX NSSHARE=$NSSHARE HOST=x86_64-linux-gnu CC=gcc install && cd ..
-
    - name: Build zlib
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export HOST=arm-kindle-linux-gnueabi
-      # FIXED: Corrected base64 to avoid .tar.gx 404
-      echo "aHR0cHM6Ly9naXRodWIuY29tL21hZGxlci96bGliL3JlbGVhc2VzL2Rvd25sb2FkL3YxLjMuMS96bGliLTEuMy4xLnRhci5neA==" | sed 's/ne==/eg==/' | base64 -d | xargs wget -O zlib.tar.gz
+      echo "aHR0cHM6Ly9naXRodWIuY29tL21hZGxlci96bGliL3JlbGVhc2VzL2Rvd25sb2FkL3YxLjMuMS96bGliLTEuMy4xLnRhci5neg==" | base64 -d | xargs wget -O zlib.tar.gz
       tar -xf zlib.tar.gz && cd zlib-1.3.1 && CHOST=$HOST ./configure --prefix=$PREFIX --static && make -j$(nproc) install && cd ..
-
    - name: Build Expat
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export HOST=arm-kindle-linux-gnueabi
       echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
       tar -xf expat.tar.gz && cd expat-2.6.0 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
-
    - name: Build libpng
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export HOST=arm-kindle-linux-gnueabi
       echo "aHR0cHM6Ly9kb3dubG9hZC5zb3VyY2Vmb3JnZS5uZXQvcHJvamVjdC9saWJwbmcvbGlicG5nMTYvMS42LjQ0L2xpYnBuZy0xLjYuNDQudGFyLmd6" | base64 -d | xargs wget -O libpng.tar.gz
       tar -xf libpng.tar.gz && cd libpng-1.6.44 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared LDFLAGS="-L$PREFIX/lib" CPPFLAGS="-I$PREFIX/include" && make -j$(nproc) install && cd ..
-
    - name: Build JPEG
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export HOST=arm-kindle-linux-gnueabi
       echo "aHR0cHM6Ly93d3cuaWpnLm9yZy9maWxlcy9qcGVnc3JjLnY5ZS50YXIuZ3o=" | base64 -d | xargs wget -O jpeg.tar.gz
       tar -xf jpeg.tar.gz && cd jpeg-9e && ./configure --host=$HOST --prefix=$PREFIX --disable-shared && make -j$(nproc) install && cd ..
-
    - name: Build Freetype
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export HOST=arm-kindle-linux-gnueabi
       echo "aHR0cHM6Ly93ZWIuYXJjaGl2ZS5vcmcvd2ViLzIwMjYwMzEwMjMyOTUzL2h0dHBzOi8vbWlycm9yLnJhYmlzdS5jb20vbWlycm9ycy9zYXZhbm5haC9mcmVldHlwZS9mcmVldHlwZS0yLjE0LjIudGFyLmd6" | base64 -d | xargs wget -O freetype.tar.gz
       tar -xf freetype.tar.gz && cd freetype-2.14.2 && ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-png=yes --with-zlib=yes && make -j$(nproc) install && cd ..
-
    - name: Build LibCurl
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
       export HOST=arm-kindle-linux-gnueabi
       echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
       tar -xf curl.tar.gz && cd curl-8.6.0
-      # FIXED: Explicit OpenSSL Path
+      # FIXED: Added explicit OpenSSL path from toolchain SYSROOT
       ./configure --host=$HOST --prefix=$PREFIX --disable-shared --with-openssl="$SYSROOT/usr" --with-zlib=$PREFIX \
       ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes \
       CPPFLAGS="-I$SYSROOT/usr/include -I$PREFIX/include" \
       LDFLAGS="-L$SYSROOT/usr/lib -L$SYSROOT/lib -L$PREFIX/lib"
       make -j$(nproc) install && cd ..
-
    - name: Build libparserutils
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
@@ -109,7 +99,6 @@ jobs:
       cd libparserutils && make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include" || true
       mkdir -p charset && cp src/charset/aliases.h charset/ && cp -r include/parserutils .
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libutf8proc
      if: steps.cache-ext-libs.outputs.cache-hit != 'true'
      run: |
@@ -117,59 +106,50 @@ jobs:
       echo "Z2l0Oi8vZ2l0Lm5ldHN1cmYtYnJvd3Nlci5vcmcvbGlidXRmOHByb2MuZ2l0" | base64 -d | xargs git clone
       cd libutf8proc && find . -name "utf8proc.h" -exec cp {} . \; && find . -name "utf8proc.h" -exec cp {} src/ \;
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libnsutils
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libnsutils.git && cd libnsutils
       for d in $(find src -maxdepth 1 -type d -not -path 'src'); do ln -s $d $(basename $d) 2>/dev/null || true; done
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libwapcaplet
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libwapcaplet.git && cd libwapcaplet
       [ -d "include/libwapcaplet" ] && ln -s include/libwapcaplet libwapcaplet 2>/dev/null || true
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libhubbub
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libhubbub.git && cd libhubbub
       for d in $(find src -maxdepth 1 -type d -not -path 'src'); do ln -s $d $(basename $d) 2>/dev/null || true; done
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libcss
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libcss.git && cd libcss
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libdom
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libdom.git && cd libdom
       for d in $(find src -maxdepth 1 -type d -not -path 'src'); do ln -s $d $(basename $d) 2>/dev/null || true; done
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libnsbmp
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libnsbmp.git && cd libnsbmp
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libnsgif
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libnsgif.git && cd libnsgif
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build libnsfb
      run: |
       export HOST=arm-kindle-linux-gnueabi && export CC=${HOST}-gcc
       git clone git://git.netsurf-browser.org/libnsfb.git && cd libnsfb
       make HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE CC=$CC BUILD_CC=gcc CFLAGS="-I$PREFIX/include -I. -Isrc" install && cd ..
-
    - name: Build NetSurf Final
      run: |
       set -e
@@ -186,7 +166,6 @@ jobs:
       make TARGET=framebuffer HOST=$HOST PREFIX=$PREFIX NSSHARE=$NSSHARE BUILD_CC=gcc install
       echo -e '#!/bin/sh\n./bin/netsurf -b 8 -f /dev/fb0 "https://www.google.com"' > $PREFIX/netsurf.sh
       chmod +x $PREFIX/netsurf.sh
-
    - name: Upload
      uses: actions/upload-artifact@v4
      with:
