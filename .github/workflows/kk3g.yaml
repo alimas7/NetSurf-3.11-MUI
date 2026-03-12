@@ -96,19 +96,10 @@ jobs:
           ZLIB_CFLAGS="-I$PREFIX/include" \
           ZLIB_LIBS="-L$PREFIX/lib -lz"
           make -j$(nproc) install && cd ..
-          
-          # LibCurl (FIXED: Pointed to SYSROOT/usr for OpenSSL)
-          echo "aHR0cHM6Ly9jdXJsLnNlL2Rvd25sb2FkL2N1cmwtOC42LjAudGFyLmd6" | base64 -d | xargs wget -O curl.tar.gz
-          tar -xf curl.tar.gz && cd curl-8.6.0
-          ./configure --host=$HOST --prefix=$PREFIX \
-          --disable-shared \
-          --with-openssl="$SYSROOT/usr" \
-          --with-zlib=$PREFIX \
-          ac_cv_func_malloc_0_nonnull=yes \
-          ac_cv_func_realloc_0_nonnull=yes \
-          CPPFLAGS="-I$SYSROOT/usr/include -I$PREFIX/include" \
-          LDFLAGS="-L$SYSROOT/usr/lib -L$SYSROOT/lib -L$PREFIX/lib"
-          make -j$(nproc) install && cd ..
+
+          # LibCurl
+          echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC9yZWxlYXNlcy9kb3dubG9hZC9jdXJsLThfNl8wL2N1cmwtOC42LjAudGFyLmJ6Mg==" | base64 -d | xargs wget -O curl.tar.bz2
+          tar -xf curl.tar.bz2 && cd curl-8.6.0 && ./configure --host=$HOST --with-openssl=$PREFIX --with-zlib=$PREFIX --prefix=$PREFIX --disable-shared --enable-static && make -j$(nproc) install && cd ..
 
       - name: Build libparserutils
         if: steps.cache-ext-libs.outputs.cache-hit != 'true'
