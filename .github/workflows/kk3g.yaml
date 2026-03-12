@@ -192,8 +192,17 @@ jobs:
           echo -e '#!/bin/sh\n./bin/netsurf -b 8 -f /dev/fb0 "https://www.google.com"' > $PREFIX/netsurf.sh
           chmod +x $PREFIX/netsurf.sh
 
-      - name: Upload
+      # - name: Upload
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: netsurf-kindle-k3
+      #     path: ${{ github.workspace }}/kindle-root/
+
+      - name: Upload workspace for debugging
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: netsurf-kindle-k3
-          path: ${{ github.workspace }}/kindle-root/
+          name: workspace-debug-${{ github.run_id }}  # Unique name per run
+          path: ${{ github.workspace }}
+          retention-days: 7  # Keep for 7 days
+          if-no-files-found: warn  # Don't fail if empty
