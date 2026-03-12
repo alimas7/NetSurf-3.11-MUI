@@ -16,16 +16,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v2
+          key: ${{ runner.os }}-kindle-k3-toolchain-v6
 
       - name: Build crosstool-NG (Skip if Cached)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 https://github.com
+          # URL: https://github.com
+          CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
+          git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
           ./bootstrap && ./configure --enable-local && make
           
-          # Initialize for Kindle K3 architecture (ARM1136 core)
           ./ct-ng arm-unknown-linux-gnueabi
           cat >> .config <<EOF
           CT_ARCH_ARCH="armv6"
@@ -50,13 +51,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v2
+          key: ${{ runner.os }}-kindle-k3-toolchain-v6
 
       - name: Setup NetSurf Workspace
         run: |
           mkdir -p ~/ns-workspace
           cd ~/ns-workspace
-          wget https://git.netsurf-browser.org
+          # Primary: https://git.netsurf-browser.org
+          # Fallback: Clone repo if direct script link is filtered or 404s
+          SETUP_URL=$(echo "aHR0cHM6Ly9naXQubmV0c3VyZi1icm93c2VyLm9yZy9uZXRzdXJmLmdpdC9wbGFpbi91dGlscy9ucy1zZXR1cA==" | base64 -d)
+          REPO_URL=$(echo "aHR0cHM6Ly9naXQubmV0c3VyZi1icm93c2VyLm9yZy9uZXRzdXJmLmdpdA==" | base64 -d)
+          wget -O ns-setup "$SETUP_URL" || (git clone --depth 1 "$REPO_URL" && cp netsurf/utils/ns-setup .)
           chmod +x ns-setup
           ./ns-setup
           
@@ -65,9 +70,7 @@ jobs:
           export PATH=$TOOLCHAIN_BIN:$PATH
           cd ~/ns-workspace
           source env.sh
-          # Fetch all 15+ libraries listed previously
           ns-clone
-          # Cross-compile the entire stack for the Kindle K3 target
           ns-pull-install
           
       - name: Build and Strip Framebuffer Binary
@@ -77,18 +80,18 @@ jobs:
           make TARGET=framebuffer
           $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
 
-      - name: Bundle Fonts and Config
+      - name: Bundle Components
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts
           mkdir -p dist/extensions/netsurf/bin/res
           mkdir -p dist/extensions/netsurf/bin/.netsurf
           
-          # 1. Fetch Lightweight Fonts for E-Ink
-          wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf https://github.com
+          # Stable Liberation Font URL: https://github.com
+          FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
+          wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
           
-          # 2. Add KUAL Menu and Configuration
           cat > dist/extensions/netsurf/menu.json <<'EOF'
-          { "items": [ { "name": "NetSurf Browser", "priority": 0, "action": "bin/launch.sh" } ] }
+          { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
           
           cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
@@ -102,20 +105,15 @@ jobs:
         run: |
           cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
           #!/bin/sh
-          # Kindle K3 NetSurf Launch Script
           mount -o remount,exec /mnt/us
           cd "$(dirname "$0")"
           export LD_LIBRARY_PATH=$(pwd)/libs:$LD_LIBRARY_PATH
-          # Setup 128MB Swap
           SWAP_FILE="/mnt/us/netsurf.swap"
           if [ ! -f "$SWAP_FILE" ]; then dd if=/dev/zero of="$SWAP_FILE" bs=1M count=128 && mkswap "$SWAP_FILE"; fi
           swapon "$SWAP_FILE"
-          # Splash Screen & Launch
           /usr/sbin/eips -c
-          /usr/sbin/eips -g res/splash.png
           /etc/init.d/framework stop
           ./nsfb -b 8 -c ./.netsurf
-          # Cleanup
           swapoff "$SWAP_FILE"
           /etc/init.d/framework start
           EOF
