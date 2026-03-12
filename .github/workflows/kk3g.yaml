@@ -72,7 +72,7 @@ jobs:
 
           # OpenSSL
           echo "aHR0cHM6Ly93d3cub3BlbnNzbC5vcmcvc291cmNlL29wZW5zc2wtMS4xLjF3LnRhci5neg==" | base64 -d | xargs wget -O openssl.tar.gz
-          tar -xf openssl.tar.gz && cd openssl-1.1.1w && ./Configure linux-armv4 --cross-compile-prefix=arm-kindle-linux-gnueabi- --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared no-tests && make -j$(nproc) install_sw && cd ..
+          tar -xf openssl.tar.gz && cd openssl-1.1.1w && ./Configure linux-armv4 --cross-compile-prefix=arm-kindle-linux-gnueabi- --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared no-tests no-async && make -j$(nproc) install_sw && cd ..
 
           # Expat
           echo "aHR0cHM6Ly9naXRodWIuY29tL2xpYmV4cGF0L2xpYmV4cGF0L3JlbGVhc2VzL2Rvd25sb2FkL1JfMl82XzAvZXhwYXQtMi42LjAudGFyLmd6" | base64 -d | xargs wget -O expat.tar.gz
@@ -99,7 +99,7 @@ jobs:
 
           # LibCurl
           echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC9yZWxlYXNlcy9kb3dubG9hZC9jdXJsLThfNl8wL2N1cmwtOC42LjAudGFyLmJ6Mg==" | base64 -d | xargs wget -O curl.tar.bz2
-          tar -xf curl.tar.bz2 && cd curl-8.6.0 && ./configure --host=$HOST --with-openssl=$PREFIX --with-zlib=$PREFIX --prefix=$PREFIX --disable-shared --enable-static && make -j$(nproc) install && cd ..
+          tar -xf curl.tar.bz2 && cd curl-8.6.0 && CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" ./configure --host=$HOST --with-openssl=$PREFIX --with-zlib=$PREFIX --prefix=$PREFIX --disable-shared --enable-static && make -j$(nproc) install && cd ..
 
       - name: Build libparserutils
         if: steps.cache-ext-libs.outputs.cache-hit != 'true'
