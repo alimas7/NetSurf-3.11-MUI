@@ -1,0 +1,135 @@
+name: Build NetSurf for Kindle K3
+on: [push, workflow_dispatch]
+
+jobs:
+  build-toolchain:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install Toolchain Build Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
+          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget
+
+      - name: Cache Toolchain
+        id: cache-toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/x-tools
+          key: ${{ runner.os }}-kindle-k3-toolchain-v2
+
+      - name: Build crosstool-NG (Skip if Cached)
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com
+          cd crosstool-ng
+          ./bootstrap && ./configure --enable-local && make
+          
+          # Initialize for Kindle K3 architecture (ARM1136 core)
+          ./ct-ng arm-unknown-linux-gnueabi
+          cat >> .config <<EOF
+          CT_ARCH_ARCH="armv6"
+          CT_ARCH_CPU="arm1136jf-s"
+          CT_ARCH_FLOAT_SW=y
+          CT_LIBC_GLIBC_V_2_5=y
+          CT_KERNEL_V_2_6_26=y
+          CT_EXPERIMENTAL=y
+          CT_ALLOW_OBSOLETE=y
+          EOF
+          ./ct-ng oldconfig
+          ./ct-ng build
+
+  build-browser:
+    needs: build-toolchain
+    runs-on: ubuntu-22.04
+    env:
+      HOST: arm-kindle-linux-gnueabi
+      TOOLCHAIN_BIN: /home/runner/x-tools/arm-kindle-linux-gnueabi/bin
+    steps:
+      - name: Restore Toolchain Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/x-tools
+          key: ${{ runner.os }}-kindle-k3-toolchain-v2
+
+      - name: Setup NetSurf Workspace
+        run: |
+          mkdir -p ~/ns-workspace
+          cd ~/ns-workspace
+          wget https://git.netsurf-browser.org
+          chmod +x ns-setup
+          ./ns-setup
+          
+      - name: Fetch and Build Libraries
+        run: |
+          export PATH=$TOOLCHAIN_BIN:$PATH
+          cd ~/ns-workspace
+          source env.sh
+          # Fetch all 15+ libraries listed previously
+          ns-clone
+          # Cross-compile the entire stack for the Kindle K3 target
+          ns-pull-install
+          
+      - name: Build and Strip Framebuffer Binary
+        run: |
+          export PATH=$TOOLCHAIN_BIN:$PATH
+          cd ~/ns-workspace/netsurf
+          make TARGET=framebuffer
+          $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
+
+      - name: Bundle Fonts and Config
+        run: |
+          mkdir -p dist/extensions/netsurf/bin/fonts
+          mkdir -p dist/extensions/netsurf/bin/res
+          mkdir -p dist/extensions/netsurf/bin/.netsurf
+          
+          # 1. Fetch Lightweight Fonts for E-Ink
+          wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf https://github.com
+          
+          # 2. Add KUAL Menu and Configuration
+          cat > dist/extensions/netsurf/menu.json <<'EOF'
+          { "items": [ { "name": "NetSurf Browser", "priority": 0, "action": "bin/launch.sh" } ] }
+          EOF
+          
+          cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
+          homepage_url:https://www.google.com
+          enable_javascript:0
+          font_sans:fonts/Sans.ttf
+          font_size:12
+          EOF
+
+      - name: Create Kindle Launch Script
+        run: |
+          cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
+          #!/bin/sh
+          # Kindle K3 NetSurf Launch Script
+          mount -o remount,exec /mnt/us
+          cd "$(dirname "$0")"
+          export LD_LIBRARY_PATH=$(pwd)/libs:$LD_LIBRARY_PATH
+          # Setup 128MB Swap
+          SWAP_FILE="/mnt/us/netsurf.swap"
+          if [ ! -f "$SWAP_FILE" ]; then dd if=/dev/zero of="$SWAP_FILE" bs=1M count=128 && mkswap "$SWAP_FILE"; fi
+          swapon "$SWAP_FILE"
+          # Splash Screen & Launch
+          /usr/sbin/eips -c
+          /usr/sbin/eips -g res/splash.png
+          /etc/init.d/framework stop
+          ./nsfb -b 8 -c ./.netsurf
+          # Cleanup
+          swapoff "$SWAP_FILE"
+          /etc/init.d/framework start
+          EOF
+          chmod +x dist/extensions/netsurf/bin/launch.sh
+
+      - name: Package Final Extension
+        run: |
+          cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/
+          cp -r ~/ns-workspace/inst/lib dist/extensions/netsurf/bin/libs
+          tar -czvf netsurf-k3-extension.tar.gz -C dist extensions/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kindle-k3-netsurf
+          path: /home/runner/work/
+          # path: netsurf-k3-extension.tar.gz
