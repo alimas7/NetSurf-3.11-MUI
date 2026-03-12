@@ -198,6 +198,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: workspace-debug-${{ github.run_id }}  # Unique name per run
-          path: ${{ github.workspace }}
+          # path: ${{ github.workspace }}
+          path: /home/runner/work/
           retention-days: 7  # Keep for 7 days
           if-no-files-found: warn  # Don't fail if empty
