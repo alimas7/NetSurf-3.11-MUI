@@ -99,7 +99,7 @@ jobs:
 
           # LibCurl
           echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC9yZWxlYXNlcy9kb3dubG9hZC9jdXJsLThfNl8wL2N1cmwtOC42LjAudGFyLmJ6Mg==" | base64 -d | xargs wget -O curl.tar.bz2
-          tar -xf curl.tar.bz2 && cd curl-8.6.0 && CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" ./configure --host=$HOST --with-openssl=$(dirname $PREFIX)//NetSurf-3.11-MUI/NetSurf-3.11-MUI/openssl-1.1.1w --with-zlib=$PREFIX --prefix=$PREFIX --disable-shared --enable-static && make -j$(nproc) install && cd ..
+          tar -xf curl.tar.bz2 && cd curl-8.6.0 && CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" ./configure --host=$HOST --with-openssl=$(dirname $PREFIX)/openssl-1.1.1w --with-zlib=$PREFIX --prefix=$PREFIX --disable-shared --enable-static && make -j$(nproc) install && cd ..
 
       - name: Build libparserutils
         if: steps.cache-ext-libs.outputs.cache-hit != 'true'
