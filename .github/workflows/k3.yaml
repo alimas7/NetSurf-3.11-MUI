@@ -27,7 +27,6 @@ jobs:
       - name: Build Toolchain from Scratch (If Cache Miss)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          # URL: h t t p s : / / g i t h u b . c o m / c r o s s t o o l - n g / c r o s s t o o l - n g . g i t
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
@@ -48,7 +47,6 @@ jobs:
       - name: Check/Create Permanent Release Asset
         id: check-release
         run: |
-          # URL: h t t p s : / / a p i . g i t h u b . c o m / r e p o s / ${{ github.repository }} / r e l e a s e s / t a g s / t o o l c h a i n - v 1
           REL_API=$(echo "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy8=" | base64 -d)"${{ github.repository }}"$(echo "L3JlbGVhc2VzL3RhZ3MvdG9vbGNoYWluLXYx" | base64 -d)
           if [ "$(curl -o /dev/null -s -w "%{http_code}" "$REL_API")" != "200" ]; then
             tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
@@ -71,22 +69,25 @@ jobs:
         run: |
           mkdir -p $PREFIX/share/netsurf-buildsystem
           cd ~/ns-workspace
-          # NetSurf mirrors: h t t p s : / / g i t h u b . c o m / n e t s u r f - b r o w s e r /
           NS_BASE=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci8=" | base64 -d)
           for r in buildsystem libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils netsurf; do
             git clone --depth 1 "${NS_BASE}${r}.git"
           done
-          # OpenSSL: h t t p s : / / g i t h u b . c o m / o p e n s s l / o p e n s s l . g i t
           git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
-          # Curl: h t t p s : / / g i t h u b . c o m / c u r l / c u r l . g i t
           git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
 
       - name: Build OpenSSL
         run: |
           export PATH=$TOOLCHAIN_BIN:$PATH
+          # Pre-flight check: verify compiler visibility
+          arm-kindle-linux-gnueabi-gcc --version
+          
           cd ~/ns-workspace/openssl
           ./Configure linux-armv4 --cross-compile-prefix=arm-kindle-linux-gnueabi- --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared
-          make -j$(nproc) && make install_sw
+          
+          # Pass PATH explicitly to ensure sub-shells find the compiler
+          make -j$(nproc) PATH="$PATH"
+          make install_sw PATH="$PATH"
 
       - name: Build LibCurl
         run: |
@@ -94,21 +95,30 @@ jobs:
           cd ~/ns-workspace/curl
           autoreconf -fi
           ./configure --host=$HOST --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2
-          make -j$(nproc) && make install
+          
+          # Pass PATH explicitly
+          make -j$(nproc) PATH="$PATH"
+          make install PATH="$PATH"
 
       - name: Build NetSurf Stack
         run: |
           export PATH=$TOOLCHAIN_BIN:$PATH
           export NSSHARED=$PREFIX/share/netsurf-buildsystem
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+          
+          # 1. Buildsystem
           cd ~/ns-workspace/buildsystem && make install PREFIX=$PREFIX && cd ..
+          
+          # 2. Libraries
           for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
             cd ~/ns-workspace/$lib
-            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static
+            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static PATH="$PATH"
             cd ..
           done
+          
+          # 3. NetSurf Browser
           cd ~/ns-workspace/netsurf
-          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED
+          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED PATH="$PATH"
           $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
 
       - name: Bundle Extension and Certificates
@@ -117,15 +127,17 @@ jobs:
           mkdir -p dist/extensions/netsurf/bin/libs
           mkdir -p dist/extensions/netsurf/bin/ssl
           mkdir -p dist/extensions/netsurf/bin/.netsurf
-          # CA Bundle: h t t p s : / / c u r l . s e / c a / c a c e r t . p e m
+          
           CA_URL=$(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
           wget -O dist/extensions/netsurf/bin/ssl/cert.pem "$CA_URL"
-          # Font: h t t p s : / / g i t h u b . c o m / s h a n t i g i l b e r t / l i b e r a t i o n - f o n t s - t t f / r a w / m a s t e r / L i b e r a t i o n S a n s - R e g u l a r . t t f
+          
           FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
+          
           cat > dist/extensions/netsurf/menu.json <<'EOF'
           { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
+          
           cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
           homepage_url:https://news.google.com
           enable_javascript:0
