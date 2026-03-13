@@ -1,4 +1,4 @@
-name: Build NetSurf and Permanentize Toolchain
+name: Build NetSurf for Kindle K3
 on: [push, workflow_dispatch]
 
 jobs:
@@ -9,6 +9,7 @@ jobs:
     env:
       HOST: arm-kindle-linux-gnueabi
       TOOLCHAIN_BIN: /home/runner/x-tools/arm-kindle-linux-gnueabi/bin
+      PREFIX: /home/runner/ns-workspace/inst
     steps:
       - name: Install System Deps
         run: |
@@ -44,96 +45,117 @@ jobs:
           ./ct-ng oldconfig
           ./ct-ng build
 
-      - name: Archive and Checksum Toolchain
+      - name: Check/Create Permanent Release Asset
+        id: check-release
         run: |
-          tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
-          sha256sum kindle-k3-toolchain.tar.xz > kindle-k3-toolchain.tar.xz.sha256
+          # URL: h t t p s : / / a p i . g i t h u b . c o m / r e p o s / ${{ github.repository }} / r e l e a s e s / t a g s / t o o l c h a i n - v 1
+          REL_API=$(echo "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy8=" | base64 -d)"${{ github.repository }}"$(echo "L3JlbGVhc2VzL3RhZ3MvdG9vbGNoYWluLXYx" | base64 -d)
+          if [ "$(curl -o /dev/null -s -w "%{http_code}" "$REL_API")" != "200" ]; then
+            tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
+            sha256sum kindle-k3-toolchain.tar.xz > kindle-k3-toolchain.tar.xz.sha256
+            echo "upload=true" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Create Permanent Release Asset
+      - name: Release Toolchain Asset
+        if: steps.check-release.outputs.upload == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: toolchain-v1
           files: |
             kindle-k3-toolchain.tar.xz
             kindle-k3-toolchain.tar.xz.sha256
-          body: "Permanent ARMv6 glibc 2.5 toolchain for Kindle K3."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup NetSurf Workspace
+      - name: Clone All Repositories
         run: |
-          mkdir -p ~/ns-workspace
+          mkdir -p $PREFIX/share/netsurf-buildsystem
           cd ~/ns-workspace
-          
-          # URL: h t t p s : / / g i t h u b . c o m / n e t s u r f - b r o w s e r / n e t s u r f . g i t
-          NS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9uZXRzdXJmLmdpdA==" | base64 -d)
-          # URL: h t t p s : / / g i t h u b . c o m / n e t s u r f - b r o w s e r / b u i l d s y s t e m . g i t
-          BS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9idWlsZHN5c3RlbS5naXQ=" | base64 -d)
-          
-          git clone --depth 1 "$NS_REPO"
-          git clone --depth 1 "$BS_REPO" buildsystem-tool
-          
-          echo "--- Locating Workspace Scripts ---"
-          # Look in netsurf/docs for env.sh and buildsystem-tool for ns-setup
-          find . -name "ns-setup" -exec cp {} . \;
-          find . -name "env.sh" -exec cp {} . \;
-          
-          if [ ! -f ./ns-setup ]; then
-            echo "Error: ns-setup not found. Listing all files:"
-            tree -L 3
-            exit 1
-          fi
-          
-          chmod +x ns-setup
-          ./ns-setup
+          # NetSurf mirrors: h t t p s : / / g i t h u b . c o m / n e t s u r f - b r o w s e r /
+          NS_BASE=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci8=" | base64 -d)
+          for r in buildsystem libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils netsurf; do
+            git clone --depth 1 "${NS_BASE}${r}.git"
+          done
+          # OpenSSL: h t t p s : / / g i t h u b . c o m / o p e n s s l / o p e n s s l . g i t
+          git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
+          # Curl: h t t p s : / / g i t h u b . c o m / c u r l / c u r l . g i t
+          git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
 
-      - name: Fetch and Build Libraries
+      - name: Build OpenSSL
         run: |
           export PATH=$TOOLCHAIN_BIN:$PATH
-          cd ~/ns-workspace
-          source env.sh
-          ns-clone
-          ns-pull-install
-          
-      - name: Build and Strip Framebuffer Binary
+          cd ~/ns-workspace/openssl
+          ./Configure linux-armv4 --cross-compile-prefix=arm-kindle-linux-gnueabi- --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared
+          make -j$(nproc) && make install_sw
+
+      - name: Build LibCurl
         run: |
           export PATH=$TOOLCHAIN_BIN:$PATH
+          cd ~/ns-workspace/curl
+          autoreconf -fi
+          ./configure --host=$HOST --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2
+          make -j$(nproc) && make install
+
+      - name: Build NetSurf Stack
+        run: |
+          export PATH=$TOOLCHAIN_BIN:$PATH
+          export NSSHARED=$PREFIX/share/netsurf-buildsystem
+          export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+          cd ~/ns-workspace/buildsystem && make install PREFIX=$PREFIX && cd ..
+          for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
+            cd ~/ns-workspace/$lib
+            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static
+            cd ..
+          done
           cd ~/ns-workspace/netsurf
-          make TARGET=framebuffer
+          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED
           $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
 
-      - name: Bundle Extension
+      - name: Bundle Extension and Certificates
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts
           mkdir -p dist/extensions/netsurf/bin/libs
+          mkdir -p dist/extensions/netsurf/bin/ssl
           mkdir -p dist/extensions/netsurf/bin/.netsurf
-          
-          # URL: h t t p s : / / g i t h u b . c o m / s h a n t i g i l b e r t / l i b e r a t i o n - f o n t s - t t f / r a w / m a s t e r / L i b e r a t i o n S a n s - R e g u l a r . t t f
+          # CA Bundle: h t t p s : / / c u r l . s e / c a / c a c e r t . p e m
+          CA_URL=$(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
+          wget -O dist/extensions/netsurf/bin/ssl/cert.pem "$CA_URL"
+          # Font: h t t p s : / / g i t h u b . c o m / s h a n t i g i l b e r t / l i b e r a t i o n - f o n t s - t t f / r a w / m a s t e r / L i b e r a t i o n S a n s - R e g u l a r . t t f
           FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
-          
           cat > dist/extensions/netsurf/menu.json <<'EOF'
           { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
-          
           cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
-          homepage_url:https://www.google.com
+          homepage_url:https://news.google.com
           enable_javascript:0
+          scale:120
+          key_menu:0x10a
+          key_home:0x102
           font_sans:fonts/Sans.ttf
           font_size:12
           EOF
 
-      - name: Create Launch Script
+      - name: Create Final Launch Script
         run: |
           cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
           #!/bin/sh
           mount -o remount,exec /mnt/us
           cd "$(dirname "$0")"
           export LD_LIBRARY_PATH=$(pwd)/libs:$LD_LIBRARY_PATH
-          SWAP_FILE="/mnt/us/netsurf.swap"
-          if [ ! -f "$SWAP_FILE" ]; then dd if=/dev/zero of="$SWAP_FILE" bs=1M count=128 && mkswap "$SWAP_FILE"; fi
-          swapon "$SWAP_FILE"
+          export SSL_CERT_FILE=$(pwd)/ssl/cert.pem
           /usr/sbin/eips -c
+          /usr/sbin/eips 0 0 "NetSurf starting..."
+          /usr/sbin/eips 0 1 "Syncing clock..."
+          date -s "$(curl -sI https://www.google.com | grep -i '^date:' | sed 's/^[Dd]ate: //g')"
+          /usr/sbin/eips 0 2 "Checking swap..."
+          SWAP_FILE="/mnt/us/netsurf.swap"
+          if [ ! -f "$SWAP_FILE" ]; then 
+              /usr/sbin/eips 0 3 "Creating 128MB swap..."
+              dd if=/dev/zero of="$SWAP_FILE" bs=1M count=128 && mkswap "$SWAP_FILE"
+          fi
+          swapon "$SWAP_FILE"
+          /usr/sbin/eips 0 4 "Stopping UI..."
           /etc/init.d/framework stop
           ./nsfb -b 8 -c ./.netsurf
           swapoff "$SWAP_FILE"
@@ -141,11 +163,11 @@ jobs:
           EOF
           chmod +x dist/extensions/netsurf/bin/launch.sh
 
-      - name: Package Final Extension
+      - name: Package Final Bundle
         run: |
           cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/
-          cp -r ~/ns-workspace/inst/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
-          tar -czvf netsurf-k3-kual-ready.tar.gz -C dist extensions/
+          cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
+          tar -czvf netsurf-k3-full.tar.gz -C dist extensions/
 
       - name: Upload Browser Artifact
         uses: actions/upload-artifact@v4
@@ -154,3 +176,4 @@ jobs:
           path: /home/runner/work/
           # path: netsurf-k3-extension.tar.gz
           # path: netsurf-k3-kual-ready.tar.gz
+          # path: netsurf-k3-full.tar.gz
