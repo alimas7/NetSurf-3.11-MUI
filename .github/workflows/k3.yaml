@@ -26,7 +26,6 @@ jobs:
       - name: Build Toolchain from Scratch (If Cache Miss)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          # URL: h t t p s : / / g i t h u b . c o m / c r o s s t o o l - n g / c r o s s t o o l - n g . g i t
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
@@ -44,11 +43,15 @@ jobs:
           ./ct-ng oldconfig
           ./ct-ng build
 
-      - name: Set Toolchain Path
+      - name: Locate Toolchain and Log Tree
         run: |
+          # Create a full file listing for debugging
+          tree -a /home/runner > /home/runner/full-file-listing.txt
+          # Find the actual bin directory and inject into environment
           REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -printf '%h\n' | head -n 1)
           echo "$REAL_BIN" >> $GITHUB_PATH
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
+          echo "Toolchain found at: $REAL_BIN"
 
       - name: Check/Create Permanent Release Asset
         id: check-release
@@ -82,24 +85,26 @@ jobs:
           git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
           git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
 
-      - name: Build OpenSSL (3.0 Legacy Support)
+      - name: Build OpenSSL (Explicit Path Mapping)
         run: |
           cd ~/ns-workspace/openssl
-          ./Configure linux-armv4 --cross-compile-prefix=arm-kindle-linux-gnueabi- --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared
+          ./Configure linux-armv4 \
+            --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
+            CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc \
+            AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar \
+            RANLIB=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ranlib \
+            LD=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ld
           make -j$(nproc) PATH="$PATH" && make install_sw PATH="$PATH"
 
-      - name: Build LibCurl (linked to new OpenSSL)
+      - name: Build LibCurl (Explicit Path Mapping)
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
-          ./configure --host=$HOST --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2
+          ./configure --host=$HOST --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2 \
+            CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc \
+            AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar \
+            RANLIB=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ranlib
           make -j$(nproc) PATH="$PATH" && make install PATH="$PATH"
-
-      - name: Verify Dependencies for NetSurf
-        run: |
-          export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-          pkg-config --exists --print-errors libcurl openssl
-          pkg-config --libs --static libcurl openssl
 
       - name: Build NetSurf Stack
         run: |
@@ -108,11 +113,13 @@ jobs:
           cd ~/ns-workspace/buildsystem && make install PREFIX=$PREFIX && cd ..
           for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
             cd ~/ns-workspace/$lib
-            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static PATH="$PATH"
+            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static \
+              CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar PATH="$PATH"
             cd ..
           done
           cd ~/ns-workspace/netsurf
-          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED PATH="$PATH"
+          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED \
+            CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc PATH="$PATH"
           arm-kindle-linux-gnueabi-strip nsfb
 
       - name: Bundle Extension and Certificates
@@ -122,7 +129,6 @@ jobs:
           wget -O dist/extensions/netsurf/bin/ssl/cert.pem "$CA_URL"
           FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
-          
           cat > dist/extensions/netsurf/menu.json <<'EOF'
           { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
@@ -144,40 +150,18 @@ jobs:
           cd "$(dirname "$0")"
           export LD_LIBRARY_PATH=$(pwd)/libs:$LD_LIBRARY_PATH
           export SSL_CERT_FILE=$(pwd)/ssl/cert.pem
-          
-          # Visual Status Log
           /usr/sbin/eips -c
-          /usr/sbin/eips 0 0 "NS: Initializing..."
-          
-          # Clock Sync for HTTPS
-          /usr/sbin/eips 0 1 "NS: Syncing Clock..."
+          /usr/sbin/eips 0 0 "NS: Syncing Clock..."
           date -s "$(curl -sI https://www.google.com | grep -i '^date:' | sed 's/^[Dd]ate: //g')"
-          
-          # Swap Setup
-          /usr/sbin/eips 0 2 "NS: Setting up Swap..."
+          /usr/sbin/eips 0 1 "NS: Setting up Swap..."
           SWAP_FILE="/mnt/us/netsurf.swap"
           if [ ! -f "$SWAP_FILE" ]; then 
-              /usr/sbin/eips 0 3 "NS: Creating 128MB Swap File..."
               dd if=/dev/zero of="$SWAP_FILE" bs=1M count=128 && mkswap "$SWAP_FILE"
           fi
           swapon "$SWAP_FILE"
-          
-          # Framework Kill
-          /usr/sbin/eips 0 4 "NS: Stopping Kindle UI..."
           /etc/init.d/framework stop
-          
-          # Binary execution check
-          if [ -x "./nsfb" ]; then
-              ./nsfb -b 8 -c ./.netsurf
-          else
-              /usr/sbin/eips 0 10 "CRITICAL: nsfb binary not found!"
-              sleep 5
-          fi
-          
-          # Cleanup
+          ./nsfb -b 8 -c ./.netsurf
           swapoff "$SWAP_FILE"
-          /usr/sbin/eips -c
-          /usr/sbin/eips 0 0 "NS: Restarting UI..."
           /etc/init.d/framework start
           EOF
           chmod +x dist/extensions/netsurf/bin/launch.sh
@@ -188,14 +172,18 @@ jobs:
           cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
           tar -czvf netsurf-k3-full.tar.gz -C dist extensions/
 
-      - name: Upload Browser Artifact
+      - name: Debug/Upload All Key Areas
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: netsurf-kindle-k3
+          name: full-workspace-debug
+          include-hidden-files: true
           path: |
-            /home/runner/work/
+            /home/runner/full-file-listing.txt
+            /home/runner/x-tools
+            /home/runner/ns-workspace
             dist/
+            netsurf-k3-full.tar.gz
           # path: /home/runner/work/
           # path: netsurf-k3-extension.tar.gz
           # path: netsurf-k3-kual-ready.tar.gz
