@@ -43,15 +43,13 @@ jobs:
           ./ct-ng oldconfig
           ./ct-ng build
 
-      - name: Locate Toolchain and Log Tree
+      - name: Locate Toolchain
         run: |
-          # Create a full file listing for debugging
-          tree -a /home/runner > /home/runner/full-file-listing.txt
-          # Find the actual bin directory and inject into environment
+          # Find the actual bin directory
           REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -printf '%h\n' | head -n 1)
-          echo "$REAL_BIN" >> $GITHUB_PATH
+          if [ -z "$REAL_BIN" ]; then echo "TOOLCHAIN NOT FOUND"; exit 1; fi
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
-          echo "Toolchain found at: $REAL_BIN"
+          echo "$REAL_BIN" >> $GITHUB_PATH
 
       - name: Check/Create Permanent Release Asset
         id: check-release
@@ -85,18 +83,17 @@ jobs:
           git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
           git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
 
-      - name: Build OpenSSL (Explicit Path Mapping)
+      - name: Build OpenSSL
         run: |
           cd ~/ns-workspace/openssl
-          ./Configure linux-armv4 \
-            --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
+          ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
             CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc \
             AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar \
             RANLIB=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ranlib \
             LD=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ld
-          make -j$(nproc) PATH="$PATH" && make install_sw PATH="$PATH"
+          make -j$(nproc) && make install_sw
 
-      - name: Build LibCurl (Explicit Path Mapping)
+      - name: Build LibCurl
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
@@ -104,7 +101,7 @@ jobs:
             CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc \
             AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar \
             RANLIB=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ranlib
-          make -j$(nproc) PATH="$PATH" && make install PATH="$PATH"
+          make -j$(nproc) && make install
 
       - name: Build NetSurf Stack
         run: |
@@ -114,21 +111,18 @@ jobs:
           for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
             cd ~/ns-workspace/$lib
             make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static \
-              CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar PATH="$PATH"
+              CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar
             cd ..
           done
           cd ~/ns-workspace/netsurf
-          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED \
-            CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc PATH="$PATH"
-          arm-kindle-linux-gnueabi-strip nsfb
+          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc
+          $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
 
-      - name: Bundle Extension and Certificates
+      - name: Bundle and Package
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts dist/extensions/netsurf/bin/libs dist/extensions/netsurf/bin/ssl dist/extensions/netsurf/bin/.netsurf
-          CA_URL=$(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
-          wget -O dist/extensions/netsurf/bin/ssl/cert.pem "$CA_URL"
-          FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
-          wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
+          wget -O dist/extensions/netsurf/bin/ssl/cert.pem $(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
+          wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf $(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           cat > dist/extensions/netsurf/menu.json <<'EOF'
           { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
@@ -141,9 +135,7 @@ jobs:
           font_sans:fonts/Sans.ttf
           font_size:12
           EOF
-
-      - name: Create Final Launch Script
-        run: |
+          # Create Launch Script
           cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
           #!/bin/sh
           mount -o remount,exec /mnt/us
@@ -153,37 +145,29 @@ jobs:
           /usr/sbin/eips -c
           /usr/sbin/eips 0 0 "NS: Syncing Clock..."
           date -s "$(curl -sI https://www.google.com | grep -i '^date:' | sed 's/^[Dd]ate: //g')"
-          /usr/sbin/eips 0 1 "NS: Setting up Swap..."
-          SWAP_FILE="/mnt/us/netsurf.swap"
-          if [ ! -f "$SWAP_FILE" ]; then 
-              dd if=/dev/zero of="$SWAP_FILE" bs=1M count=128 && mkswap "$SWAP_FILE"
-          fi
-          swapon "$SWAP_FILE"
+          swapon /mnt/us/netsurf.swap 2>/dev/null || (dd if=/dev/zero of=/mnt/us/netsurf.swap bs=1M count=128 && mkswap /mnt/us/netsurf.swap && swapon /mnt/us/netsurf.swap)
           /etc/init.d/framework stop
           ./nsfb -b 8 -c ./.netsurf
-          swapoff "$SWAP_FILE"
+          swapoff /mnt/us/netsurf.swap
           /etc/init.d/framework start
           EOF
           chmod +x dist/extensions/netsurf/bin/launch.sh
-
-      - name: Package Final Bundle
-        run: |
-          cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/
+          cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/ || true
           cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
-          tar -czvf netsurf-k3-full.tar.gz -C dist extensions/
+          tar -czf netsurf-k3-full.tar.gz -C dist extensions/
 
-      - name: Debug/Upload All Key Areas
+      - name: Final Debug Archiving
+        if: always()
+        run: |
+          tree -a /home/runner > runner_tree.txt
+          tar -cf debug_workspace.tar /home/runner/ns-workspace /home/runner/x-tools runner_tree.txt
+
+      - name: Upload Debug Tar
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: full-workspace-debug
-          include-hidden-files: true
-          path: |
-            /home/runner/full-file-listing.txt
-            /home/runner/x-tools
-            /home/runner/ns-workspace
-            dist/
-            netsurf-k3-full.tar.gz
+          path: debug_workspace.tar
           # path: /home/runner/work/
           # path: netsurf-k3-extension.tar.gz
           # path: netsurf-k3-kual-ready.tar.gz
