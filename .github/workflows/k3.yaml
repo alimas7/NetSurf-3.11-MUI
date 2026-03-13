@@ -160,7 +160,7 @@ jobs:
         if: always()
         run: |
           tree -a /home/runner > runner_tree.txt
-          tar -cf debug_workspace.tar /home/runner/ns-workspace /home/runner/x-tools runner_tree.txt
+          tar -cf debug_workspace.tar /home/runner runner_tree.txt
 
       - name: Upload Debug Tar
         if: always()
