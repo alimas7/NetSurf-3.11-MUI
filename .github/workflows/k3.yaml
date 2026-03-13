@@ -7,7 +7,6 @@ jobs:
     permissions:
       contents: write
     env:
-      HOST: arm-kindle-linux-gnueabi
       PREFIX: /home/runner/ns-workspace/inst
     steps:
       - name: Install System Deps
@@ -21,9 +20,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v6
+          key: ${{ runner.os }}-kindle-k3-toolchain-v7
 
-      - name: Build Toolchain from Scratch (If Cache Miss)
+      - name: Build Toolchain (Correct Legacy Settings)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
@@ -32,26 +31,33 @@ jobs:
           ./bootstrap && ./configure --enable-local && make
           ./ct-ng arm-unknown-linux-gnueabi
           cat >> .config <<EOF
+          CT_EXPERIMENTAL=y
+          CT_ALLOW_OBSOLETE=y
           CT_ARCH_ARCH="armv6"
           CT_ARCH_CPU="arm1136jf-s"
           CT_ARCH_FLOAT_SW=y
           CT_LIBC_GLIBC_V_2_5=y
           CT_KERNEL_V_2_6_26=y
-          CT_EXPERIMENTAL=y
-          CT_ALLOW_OBSOLETE=y
+          CT_GCC_V_6=y
           EOF
           ./ct-ng oldconfig
           ./ct-ng build
+          GCC_EXEC=$(find /home/runner/x-tools -name "*gcc" -type f -executable | head -n 1)
+          GCC_VER=$($GCC_EXEC -dumpversion)
+          echo "Built GCC Version: $GCC_VER"
+          if [[ "$GCC_VER" == 15* ]]; then echo "ERROR: GCC 15 detected. Stopping."; exit 1; fi
 
       - name: Locate Toolchain
         run: |
-          # Find the actual bin directory
-          REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -printf '%h\n' | head -n 1)
+          REAL_BIN=$(find /home/runner/x-tools -name "*gcc" -type f -executable -printf '%h\n' | head -n 1)
           if [ -z "$REAL_BIN" ]; then echo "TOOLCHAIN NOT FOUND"; exit 1; fi
+          CC_NAME=$(ls $REAL_BIN | grep "\-gcc$" | head -n 1)
+          PREFIX_NAME=${CC_NAME%-gcc}
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
+          echo "TOOLCHAIN_PREFIX=$PREFIX_NAME" >> $GITHUB_ENV
           echo "$REAL_BIN" >> $GITHUB_PATH
 
-      - name: Check/Create Permanent Release Asset
+      - name: Permanent Release Asset Check
         id: check-release
         run: |
           REL_API=$(echo "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy8=" | base64 -d)"${{ github.repository }}"$(echo "L3JlbGVhc2VzL3RhZ3MvdG9vbGNoYWluLXYx" | base64 -d)
@@ -74,33 +80,29 @@ jobs:
 
       - name: Clone All Repositories
         run: |
-          mkdir -p $PREFIX/share/netsurf-buildsystem
+          mkdir -p ~/ns-workspace
           cd ~/ns-workspace
           NS_BASE=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci8=" | base64 -d)
           for r in buildsystem libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils netsurf; do
             git clone --depth 1 "${NS_BASE}${r}.git"
           done
-          git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
-          git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
+          git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d) openssl
+          git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d) curl
 
       - name: Build OpenSSL
         run: |
           cd ~/ns-workspace/openssl
           ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
-            CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc \
-            AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar \
-            RANLIB=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ranlib \
-            LD=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ld
+            CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar \
+            RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib LD=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ld
           make -j$(nproc) && make install_sw
 
       - name: Build LibCurl
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
-          ./configure --host=$HOST --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2 \
-            CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc \
-            AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar \
-            RANLIB=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ranlib
+          ./configure --host=$TOOLCHAIN_PREFIX --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2 \
+            CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib
           make -j$(nproc) && make install
 
       - name: Build NetSurf Stack
@@ -110,32 +112,19 @@ jobs:
           cd ~/ns-workspace/buildsystem && make install PREFIX=$PREFIX && cd ..
           for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
             cd ~/ns-workspace/$lib
-            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$HOST COMPONENT_TYPE=lib-static \
-              CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc AR=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-ar
+            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$TOOLCHAIN_PREFIX COMPONENT_TYPE=lib-static \
+              CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar
             cd ..
           done
           cd ~/ns-workspace/netsurf
-          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED CC=$TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-gcc
-          $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
+          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc
+          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip nsfb
 
-      - name: Bundle and Package
+      - name: Bundle Extension
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts dist/extensions/netsurf/bin/libs dist/extensions/netsurf/bin/ssl dist/extensions/netsurf/bin/.netsurf
           wget -O dist/extensions/netsurf/bin/ssl/cert.pem $(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf $(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
-          cat > dist/extensions/netsurf/menu.json <<'EOF'
-          { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
-          EOF
-          cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
-          homepage_url:https://news.google.com
-          enable_javascript:0
-          scale:120
-          key_menu:0x10a
-          key_home:0x102
-          font_sans:fonts/Sans.ttf
-          font_size:12
-          EOF
-          # Create Launch Script
           cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
           #!/bin/sh
           mount -o remount,exec /mnt/us
@@ -143,7 +132,6 @@ jobs:
           export LD_LIBRARY_PATH=$(pwd)/libs:$LD_LIBRARY_PATH
           export SSL_CERT_FILE=$(pwd)/ssl/cert.pem
           /usr/sbin/eips -c
-          /usr/sbin/eips 0 0 "NS: Syncing Clock..."
           date -s "$(curl -sI https://www.google.com | grep -i '^date:' | sed 's/^[Dd]ate: //g')"
           swapon /mnt/us/netsurf.swap 2>/dev/null || (dd if=/dev/zero of=/mnt/us/netsurf.swap bs=1M count=128 && mkswap /mnt/us/netsurf.swap && swapon /mnt/us/netsurf.swap)
           /etc/init.d/framework stop
@@ -156,18 +144,18 @@ jobs:
           cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
           tar -czf netsurf-k3-full.tar.gz -C dist extensions/
 
-      - name: Final Debug Archiving
+      - name: Debug Full Runner Workspace
         if: always()
         run: |
-          tree -a /home/runner > runner_tree.txt
-          tar -cf debug_workspace.tar /home/runner runner_tree.txt
-
-      - name: Upload Debug Tar
+          tree -a /home/runner > full_runner_tree.txt
+          tar -czf debug_full_runner.txz /home/runner/
+          
+      - name: Upload Debug Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: full-workspace-debug
-          path: debug_workspace.tar
+          name: full-debug-runner
+          path: debug_full_runner.txz
           # path: /home/runner/work/
           # path: netsurf-k3-extension.tar.gz
           # path: netsurf-k3-kual-ready.tar.gz
