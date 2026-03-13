@@ -25,41 +25,30 @@ jobs:
       - name: Build Toolchain (Forced Legacy Settings)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          # URL: h t t p s : / / g i t h u b . c o m / c r o s s t o o l - n g / c r o s s t o o l - n g . g i t
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
           ./bootstrap && ./configure --enable-local && make
-          
-          # 1. Initialize for ARM
           ./ct-ng arm-unknown-linux-gnueabi
           
-          # 2. Aggressive sed overrides to kill GCC 15 defaults
-          sed -i 's/CT_GCC_V_.*/CT_GCC_V_6=y/' .config
-          sed -i 's/CT_LIBC_GLIBC_V_.*/CT_LIBC_GLIBC_V_2_5=y/' .config
+          # Force Legacy versions via setconfig
+          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_EXPERIMENTAL=y
+          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_ALLOW_OBSOLETE=y
+          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_LIBC_GLIBC_V_2_5=y
+          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_GCC_V_6=y
           
-          # 3. Inject Kindle-specific requirements
           cat >> .config <<EOF
-          CT_EXPERIMENTAL=y
-          CT_ALLOW_OBSOLETE=y
           CT_ARCH_ARCH="armv6"
           CT_ARCH_CPU="arm1136jf-s"
           CT_ARCH_FLOAT_SW=y
           CT_KERNEL_V_2_6_26=y
-          # SILENCE SPINNER
           CT_LOG_PROGRESS_BAR=n
           EOF
           
-          # 4. Finalize config
-          ./ct-ng oldconfig
-          
-          # --- PRE-FLIGHT CHECK (Saves 50 minutes) ---
-          echo "--- VERIFYING CONFIGURATION ---"
-          grep "CT_GCC_V_6=y" .config || (echo "ERROR: Config failed to set GCC 6"; exit 1)
-          grep "CT_LIBC_GLIBC_V_2_5=y" .config || (echo "ERROR: Config failed to set GLIBC 2.5"; exit 1)
-          echo "Config Verified. Starting 50-minute build..."
-          
-          # 5. Build
+          ./ct-ng upgradeconfig
+          echo "--- VERIFYING CONFIG ---"
+          grep "CT_GCC_V_6=y" .config || exit 1
+          grep "CT_LIBC_GLIBC_V_2_5=y" .config || exit 1
           ./ct-ng build
 
       - name: Locate Toolchain
@@ -78,7 +67,6 @@ jobs:
           REL_API=$(echo "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy8=" | base64 -d)"${{ github.repository }}"$(echo "L3JlbGVhc2VzL3RhZ3MvdG9vbGNoYWluLXYx" | base64 -d)
           if [ "$(curl -o /dev/null -s -w "%{http_code}" "$REL_API")" != "200" ]; then
             tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
-            sha256sum kindle-k3-toolchain.tar.xz > kindle-k3-toolchain.tar.xz.sha256
             echo "upload=true" >> $GITHUB_OUTPUT
           fi
 
@@ -87,9 +75,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: toolchain-v1
-          files: |
-            kindle-k3-toolchain.tar.xz
-            kindle-k3-toolchain.tar.xz.sha256
+          files: kindle-k3-toolchain.tar.xz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -112,7 +98,7 @@ jobs:
             AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar \
             RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib \
             LD=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ld
-          make -j$(nproc) PATH="$PATH" && make install_sw PATH="$PATH"
+          make -j$(nproc) && make install_sw
 
       - name: Build LibCurl
         run: |
@@ -122,7 +108,7 @@ jobs:
             CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc \
             AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar \
             RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib
-          make -j$(nproc) PATH="$PATH" && make install PATH="$PATH"
+          make -j$(nproc) && make install
 
       - name: Build NetSurf Stack
         run: |
@@ -138,7 +124,7 @@ jobs:
           cd ~/ns-workspace/netsurf
           make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED \
             CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc PATH="$PATH"
-          arm-kindle-linux-gnueabi-strip nsfb || $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip nsfb
+          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip nsfb
 
       - name: Create Launch Script
         run: |
@@ -164,7 +150,6 @@ jobs:
           export LD_LIBRARY_PATH=$(pwd)/libs:$LD_LIBRARY_PATH
           export SSL_CERT_FILE=$(pwd)/ssl/cert.pem
           /usr/sbin/eips -c
-          /usr/sbin/eips 0 0 "NS: Syncing Clock..."
           date -s "$(curl -sI https://www.google.com | grep -i '^date:' | sed 's/^[Dd]ate: //g')"
           swapon /mnt/us/netsurf.swap 2>/dev/null || (dd if=/dev/zero of=/mnt/us/netsurf.swap bs=1M count=128 && mkswap /mnt/us/netsurf.swap && swapon /mnt/us/netsurf.swap)
           /etc/init.d/framework stop
