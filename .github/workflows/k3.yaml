@@ -149,14 +149,16 @@ jobs:
           chmod +x dist/extensions/netsurf/bin/launch.sh
           cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/ || true
           cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
-          tar -czf netsurf-k3-full.tar.gz -C dist extensions/
+          # tar -czf netsurf-k3-full.tar.gz -C dist extensions/
+          tar -czf ALL.txz /home/runner
 
       - name: Upload Debug Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: full-debug-runner
-          path: |
-             /home/runner/ns-workspace
-             /home/runner/x-tools
-             netsurf-k3-full.tar.gz
+          path: ALL.txz
+          # path: |
+          #    /home/runner/ns-workspace
+          #    /home/runner/x-tools
+          #    netsurf-k3-full.tar.gz
