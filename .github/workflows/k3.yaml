@@ -14,7 +14,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
-          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl
+          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl tree
 
       - name: Restore Toolchain Cache
         id: cache-toolchain
@@ -26,6 +26,7 @@ jobs:
       - name: Build Toolchain from Scratch (If Cache Miss)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
+          # URL: h t t p s : / / g i t h u b . c o m / c r o s s t o o l - n g / c r o s s t o o l - n g . g i t
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
@@ -59,20 +60,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- FIXED NETSURF WORKSPACE SETUP ---
       - name: Setup NetSurf Workspace
         run: |
           mkdir -p ~/ns-workspace
           cd ~/ns-workspace
-          NS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9uZXRzdXJmLmdpdA==" | base64 -d)
-          # Use a deeper clone to ensure all utility scripts are present
-          git clone --depth 10 "$NS_REPO"
           
-          # Locating ns-setup: It is often in docs/ or utils/ depending on branch
-          find netsurf -name "ns-setup" -exec cp {} . \;
+          # URL: h t t p s : / / g i t h u b . c o m / n e t s u r f - b r o w s e r / n e t s u r f . g i t
+          NS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9uZXRzdXJmLmdpdA==" | base64 -d)
+          # URL: h t t p s : / / g i t h u b . c o m / n e t s u r f - b r o w s e r / b u i l d s y s t e m . g i t
+          BS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9idWlsZHN5c3RlbS5naXQ=" | base64 -d)
+          
+          git clone --depth 1 "$NS_REPO"
+          git clone --depth 1 "$BS_REPO" buildsystem-tool
+          
+          echo "--- Locating Workspace Scripts ---"
+          # Look in netsurf/docs for env.sh and buildsystem-tool for ns-setup
+          find . -name "ns-setup" -exec cp {} . \;
+          find . -name "env.sh" -exec cp {} . \;
+          
+          if [ ! -f ./ns-setup ]; then
+            echo "Error: ns-setup not found. Listing all files:"
+            tree -L 3
+            exit 1
+          fi
+          
           chmod +x ns-setup
           ./ns-setup
-          
+
       - name: Fetch and Build Libraries
         run: |
           export PATH=$TOOLCHAIN_BIN:$PATH
@@ -93,11 +107,15 @@ jobs:
           mkdir -p dist/extensions/netsurf/bin/fonts
           mkdir -p dist/extensions/netsurf/bin/libs
           mkdir -p dist/extensions/netsurf/bin/.netsurf
+          
+          # URL: h t t p s : / / g i t h u b . c o m / s h a n t i g i l b e r t / l i b e r a t i o n - f o n t s - t t f / r a w / m a s t e r / L i b e r a t i o n S a n s - R e g u l a r . t t f
           FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
+          
           cat > dist/extensions/netsurf/menu.json <<'EOF'
           { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
+          
           cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
           homepage_url:https://www.google.com
           enable_javascript:0
