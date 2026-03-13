@@ -23,7 +23,6 @@ jobs:
           path: ~/x-tools
           key: ${{ runner.os }}-kindle-k3-toolchain-v6
 
-      # --- TOOLCHAIN BUILD (RE-ADDED FOR FUTURE-PROOFING) ---
       - name: Build Toolchain from Scratch (If Cache Miss)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
@@ -31,8 +30,6 @@ jobs:
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
           ./bootstrap && ./configure --enable-local && make
-          
-          # Initialize for Kindle K3 architecture
           ./ct-ng arm-unknown-linux-gnueabi
           cat >> .config <<EOF
           CT_ARCH_ARCH="armv6"
@@ -46,7 +43,6 @@ jobs:
           ./ct-ng oldconfig
           ./ct-ng build
 
-      # --- PERMANENT STORAGE & CHECKSUM ---
       - name: Archive and Checksum Toolchain
         run: |
           tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
@@ -63,14 +59,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- NETSURF BUILD STEP ---
+      # --- FIXED NETSURF WORKSPACE SETUP ---
       - name: Setup NetSurf Workspace
         run: |
           mkdir -p ~/ns-workspace
           cd ~/ns-workspace
           NS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9uZXRzdXJmLmdpdA==" | base64 -d)
-          git clone --depth 1 "$NS_REPO"
-          cp netsurf/utils/ns-setup .
+          # Use a deeper clone to ensure all utility scripts are present
+          git clone --depth 10 "$NS_REPO"
+          
+          # Locating ns-setup: It is often in docs/ or utils/ depending on branch
+          find netsurf -name "ns-setup" -exec cp {} . \;
           chmod +x ns-setup
           ./ns-setup
           
@@ -94,14 +93,11 @@ jobs:
           mkdir -p dist/extensions/netsurf/bin/fonts
           mkdir -p dist/extensions/netsurf/bin/libs
           mkdir -p dist/extensions/netsurf/bin/.netsurf
-          
           FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
-          
           cat > dist/extensions/netsurf/menu.json <<'EOF'
           { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
           EOF
-          
           cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
           homepage_url:https://www.google.com
           enable_javascript:0
