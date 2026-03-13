@@ -128,6 +128,7 @@ jobs:
           $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip nsfb
 
       - name: Create Bundle & Launch Script
+        if: always()
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts dist/extensions/netsurf/bin/libs dist/extensions/netsurf/bin/ssl dist/extensions/netsurf/bin/.netsurf
           wget -O dist/extensions/netsurf/bin/ssl/cert.pem $(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
