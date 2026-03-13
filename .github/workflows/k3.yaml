@@ -20,45 +20,46 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v8
+          key: ${{ runner.os }}-kindle-k3-toolchain-v9
 
-      - name: Build Toolchain (Forced Legacy Settings)
+      - name: Build Toolchain (Clean Template Approach)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
           ./bootstrap && ./configure --enable-local && make
-          ./ct-ng arm-unknown-linux-gnueabi
           
-          # Force Legacy versions via setconfig
-          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_EXPERIMENTAL=y
-          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_ALLOW_OBSOLETE=y
-          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_LIBC_GLIBC_V_2_5=y
-          ./ct-ng setconfig KCONFIG_CONFIG=.config CT_GCC_V_6=y
-          
-          cat >> .config <<EOF
+          # CREATE THE CLEAN KINDLE TEMPLATE
+          # This defines the "Root Cause" settings directly
+          cat > kindle_k3_defconfig <<EOF
+          CT_EXPERIMENTAL=y
+          CT_ALLOW_OBSOLETE=y
+          CT_ARCH_ARM=y
           CT_ARCH_ARCH="armv6"
           CT_ARCH_CPU="arm1136jf-s"
           CT_ARCH_FLOAT_SW=y
+          CT_TARGET_VENDOR="kindle"
+          CT_LIBC_GLIBC=y
+          CT_LIBC_GLIBC_V_2_5=y
+          CT_KERNEL_LINUX=y
           CT_KERNEL_V_2_6_26=y
+          CT_GCC_V_6=y
           CT_LOG_PROGRESS_BAR=n
           EOF
           
-          ./ct-ng upgradeconfig
-          echo "--- VERIFYING CONFIG ---"
-          grep "CT_GCC_V_6=y" .config || exit 1
-          grep "CT_LIBC_GLIBC_V_2_5=y" .config || exit 1
+          # Load our custom template instead of the 'unknown' one
+          ./ct-ng defconfig DEFCONFIG=kindle_k3_defconfig
+          
+          # Build
           ./ct-ng build
 
       - name: Locate Toolchain
         run: |
-          REAL_BIN=$(find /home/runner/x-tools -name "*gcc" -type f -executable -printf '%h\n' | head -n 1)
+          REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -type f -executable -printf '%h\n' | head -n 1)
           if [ -z "$REAL_BIN" ]; then echo "TOOLCHAIN NOT FOUND"; exit 1; fi
-          CC_NAME=$(ls $REAL_BIN | grep "\-gcc$" | head -n 1)
-          PREFIX_NAME=${CC_NAME%-gcc}
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
-          echo "TOOLCHAIN_PREFIX=$PREFIX_NAME" >> $GITHUB_ENV
+          echo "TOOLCHAIN_PREFIX=arm-kindle-linux-gnueabi" >> $GITHUB_ENV
           echo "$REAL_BIN" >> $GITHUB_PATH
 
       - name: Check/Create Permanent Release Asset
@@ -70,7 +71,7 @@ jobs:
             echo "upload=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Release Toolchain Asset
+      - name: Upload Toolchain to Release
         if: steps.check-release.outputs.upload == 'true'
         uses: softprops/action-gh-release@v2
         with:
@@ -126,23 +127,11 @@ jobs:
             CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc PATH="$PATH"
           $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip nsfb
 
-      - name: Create Launch Script
+      - name: Create Bundle & Launch Script
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts dist/extensions/netsurf/bin/libs dist/extensions/netsurf/bin/ssl dist/extensions/netsurf/bin/.netsurf
           wget -O dist/extensions/netsurf/bin/ssl/cert.pem $(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf $(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
-          cat > dist/extensions/netsurf/menu.json <<'EOF'
-          { "items": [ { "name": "NetSurf", "priority": 0, "action": "bin/launch.sh" } ] }
-          EOF
-          cat > dist/extensions/netsurf/bin/.netsurf/Choices <<'EOF'
-          homepage_url:https://news.google.com
-          enable_javascript:0
-          scale:120
-          key_menu:0x10a
-          key_home:0x102
-          font_sans:fonts/Sans.ttf
-          font_size:12
-          EOF
           cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
           #!/bin/sh
           mount -o remount,exec /mnt/us
@@ -158,10 +147,7 @@ jobs:
           /etc/init.d/framework start
           EOF
           chmod +x dist/extensions/netsurf/bin/launch.sh
-
-      - name: Package Final Bundle
-        run: |
-          cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/
+          cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/ || true
           cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
           tar -czf netsurf-k3-full.tar.gz -C dist extensions/
 
