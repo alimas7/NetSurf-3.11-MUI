@@ -1,32 +1,38 @@
-name: Build NetSurf for Kindle K3
+name: Build NetSurf and Permanentize Toolchain
 on: [push, workflow_dispatch]
 
 jobs:
-  build-toolchain:
+  build-and-release:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      HOST: arm-kindle-linux-gnueabi
+      TOOLCHAIN_BIN: /home/runner/x-tools/arm-kindle-linux-gnueabi/bin
     steps:
-      - name: Install Toolchain Build Deps
+      - name: Install System Deps
         run: |
           sudo apt-get update
           sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
-          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget
+          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl
 
-      - name: Cache Toolchain
+      - name: Restore Toolchain Cache
         id: cache-toolchain
         uses: actions/cache@v4
         with:
           path: ~/x-tools
           key: ${{ runner.os }}-kindle-k3-toolchain-v6
 
-      - name: Build crosstool-NG (Skip if Cached)
+      # --- TOOLCHAIN BUILD (RE-ADDED FOR FUTURE-PROOFING) ---
+      - name: Build Toolchain from Scratch (If Cache Miss)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          # URL: https://github.com
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
           cd crosstool-ng
           ./bootstrap && ./configure --enable-local && make
           
+          # Initialize for Kindle K3 architecture
           ./ct-ng arm-unknown-linux-gnueabi
           cat >> .config <<EOF
           CT_ARCH_ARCH="armv6"
@@ -40,28 +46,31 @@ jobs:
           ./ct-ng oldconfig
           ./ct-ng build
 
-  build-browser:
-    needs: build-toolchain
-    runs-on: ubuntu-22.04
-    env:
-      HOST: arm-kindle-linux-gnueabi
-      TOOLCHAIN_BIN: /home/runner/x-tools/arm-kindle-linux-gnueabi/bin
-    steps:
-      - name: Restore Toolchain Cache
-        uses: actions/cache@v4
-        with:
-          path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v6
+      # --- PERMANENT STORAGE & CHECKSUM ---
+      - name: Archive and Checksum Toolchain
+        run: |
+          tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
+          sha256sum kindle-k3-toolchain.tar.xz > kindle-k3-toolchain.tar.xz.sha256
 
+      - name: Create Permanent Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: toolchain-v1
+          files: |
+            kindle-k3-toolchain.tar.xz
+            kindle-k3-toolchain.tar.xz.sha256
+          body: "Permanent ARMv6 glibc 2.5 toolchain for Kindle K3."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- NETSURF BUILD STEP ---
       - name: Setup NetSurf Workspace
         run: |
           mkdir -p ~/ns-workspace
           cd ~/ns-workspace
-          # Primary: https://git.netsurf-browser.org
-          # Fallback: Clone repo if direct script link is filtered or 404s
-          SETUP_URL=$(echo "aHR0cHM6Ly9naXQubmV0c3VyZi1icm93c2VyLm9yZy9uZXRzdXJmLmdpdC9wbGFpbi91dGlscy9ucy1zZXR1cA==" | base64 -d)
-          REPO_URL=$(echo "aHR0cHM6Ly9naXQubmV0c3VyZi1icm93c2VyLm9yZy9uZXRzdXJmLmdpdA==" | base64 -d)
-          wget -O ns-setup "$SETUP_URL" || (git clone --depth 1 "$REPO_URL" && cp netsurf/utils/ns-setup .)
+          NS_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci9uZXRzdXJmLmdpdA==" | base64 -d)
+          git clone --depth 1 "$NS_REPO"
+          cp netsurf/utils/ns-setup .
           chmod +x ns-setup
           ./ns-setup
           
@@ -80,13 +89,12 @@ jobs:
           make TARGET=framebuffer
           $TOOLCHAIN_BIN/arm-kindle-linux-gnueabi-strip nsfb
 
-      - name: Bundle Components
+      - name: Bundle Extension
         run: |
           mkdir -p dist/extensions/netsurf/bin/fonts
-          mkdir -p dist/extensions/netsurf/bin/res
+          mkdir -p dist/extensions/netsurf/bin/libs
           mkdir -p dist/extensions/netsurf/bin/.netsurf
           
-          # Stable Liberation Font URL: https://github.com
           FONT_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL3NoYW50aWdpbGJlcnQvbGliZXJhdGlvbi1mb250cy10dGYvcmF3L21hc3Rlci9MaWJlcmF0aW9uU2Fucy1SZWd1bGFyLnR0Zg==" | base64 -d)
           wget -O dist/extensions/netsurf/bin/fonts/Sans.ttf "$FONT_URL"
           
@@ -101,7 +109,7 @@ jobs:
           font_size:12
           EOF
 
-      - name: Create Kindle Launch Script
+      - name: Create Launch Script
         run: |
           cat > dist/extensions/netsurf/bin/launch.sh <<'EOF'
           #!/bin/sh
@@ -122,12 +130,13 @@ jobs:
       - name: Package Final Extension
         run: |
           cp ~/ns-workspace/netsurf/nsfb dist/extensions/netsurf/bin/
-          cp -r ~/ns-workspace/inst/lib dist/extensions/netsurf/bin/libs
-          tar -czvf netsurf-k3-extension.tar.gz -C dist extensions/
+          cp -r ~/ns-workspace/inst/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
+          tar -czvf netsurf-k3-kual-ready.tar.gz -C dist extensions/
 
-      - name: Upload Artifact
+      - name: Upload Browser Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kindle-k3-netsurf
+          name: netsurf-kindle-k3
           path: /home/runner/work/
           # path: netsurf-k3-extension.tar.gz
+          # path: netsurf-k3-kual-ready.tar.gz
