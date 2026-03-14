@@ -106,6 +106,7 @@ jobs:
           cd ~/ns-workspace/curl
           autoreconf -fi
           ./configure --host=$TOOLCHAIN_PREFIX --prefix=$PREFIX --with-openssl=$PREFIX --disable-shared --enable-static --without-libidn2 \
+            --disable-threaded-resolver \
             CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc \
             AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar \
             RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib
