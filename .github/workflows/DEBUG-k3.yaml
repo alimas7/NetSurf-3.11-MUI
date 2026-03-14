@@ -16,7 +16,7 @@ jobs:
 
       - name: Restore Toolchain Cache
         id: cache-toolchain
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/x-tools
           key: ${{ runner.os }}-kindle-k3-toolchain-v9
@@ -46,12 +46,20 @@ jobs:
           ./ct-ng defconfig DEFCONFIG=kindle_k3_defconfig
           ./ct-ng build
 
+      - name: Save Toolchain Cache
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/x-tools
+          key: ${{ runner.os }}-kindle-k3-toolchain-v9
+
       - name: Locate Toolchain
         run: |
           REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -type f -executable -printf '%h\n' | head -n 1)
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
           echo "$REAL_BIN" >> $GITHUB_PATH
-          echo "SYSROOT_LIB=/home/runner/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot/lib" >> $GITHUB_ENV
+          SYS_LIB=$(find /home/runner/x-tools -name "libatomic.a" -printf '%h\n' | head -n 1)
+          echo "SYSROOT_LIB=$SYS_LIB" >> $GITHUB_ENV
 
       - name: Clone Repos
         run: |
@@ -87,32 +95,13 @@ jobs:
             LIBS="-latomic"
           make -j$(nproc) && make install
 
-      - name: Download CA Certificates
-        run: |
-          mkdir -p $PREFIX/ssl
-          CERT_URL=$(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
-          curl -L -o $PREFIX/ssl/cert.pem "$CERT_URL"
-
       - name: Verify Architecture
         run: |
-          echo "Checking curl binary architecture..."
           $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-readelf -h $PREFIX/bin/curl | grep -E 'Class|Data|Machine'
-          echo "Checking library dependencies..."
-          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-readelf -d $PREFIX/bin/curl | grep 'Shared library' || echo "Static build confirmed"
-
-      - name: Upload Logs on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: curl-debug-logs
-          path: |
-            ~/ns-workspace/curl/config.log
+          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip $PREFIX/bin/curl
 
       - name: Upload Finished Binaries
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kindle-curl-openssl
-          path: |
-            ${{ env.PREFIX }}/bin/curl
-            ${{ env.PREFIX }}/ssl/cert.pem
+          name: kindle-curl-stripped
+          path: ${{ env.PREFIX }}/bin/curl
