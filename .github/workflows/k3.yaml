@@ -153,7 +153,8 @@ jobs:
           cp -r $PREFIX/lib/*.so* dist/extensions/netsurf/bin/libs/ || true
           # tar -czf netsurf-k3-full.tar.gz -C dist extensions/
           # tar -czf ALL.txz /home/runner --exclude='home/runner/work/NetSurf-3.11-MUI/NetSurf-3.11-MUI/ALL.txz'
-          pwd || tar -czf ALL.txz /home/runner/ns-workspace/curl/configure /home/runner/ns-workspace/curl/config.log /home/runner/ns-workspace/inst/lib/libcrypto.a home/runner/ns-workspace/inst/lib/pkgconfig/libcrypto.pc
+          pwd
+          tar -czf ALL.txz /home/runner/ns-workspace/curl/configure /home/runner/ns-workspace/curl/config.log /home/runner/ns-workspace/inst/lib/libcrypto.a home/runner/ns-workspace/inst/lib/pkgconfig/libcrypto.pc
 
       - name: Upload Debug Artifact
         if: always()
