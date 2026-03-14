@@ -11,7 +11,8 @@ jobs:
       - name: Install System Deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool-bin pkg-config curl wget make
+          sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
+          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl tree pkg-config
 
       - name: Restore Toolchain Cache
         id: cache-toolchain
@@ -20,20 +21,46 @@ jobs:
           path: ~/x-tools
           key: ${{ runner.os }}-kindle-k3-toolchain-v9
 
+      - name: Build Toolchain Fallback
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        run: |
+          CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
+          git clone --depth 1 "$CT_REPO"
+          cd crosstool-ng
+          ./bootstrap && ./configure --enable-local && make
+          cat > kindle_k3_defconfig <<EOF
+          CT_EXPERIMENTAL=y
+          CT_ALLOW_OBSOLETE=y
+          CT_ARCH_ARM=y
+          CT_ARCH_ARCH="armv6"
+          CT_ARCH_CPU="arm1136jf-s"
+          CT_ARCH_FLOAT_SW=y
+          CT_TARGET_VENDOR="kindle"
+          CT_LIBC_GLIBC=y
+          CT_LIBC_GLIBC_V_2_5=y
+          CT_KERNEL_LINUX=y
+          CT_KERNEL_V_2_6_26=y
+          CT_GCC_V_6=y
+          CT_LOG_PROGRESS_BAR=n
+          EOF
+          ./ct-ng defconfig DEFCONFIG=kindle_k3_defconfig
+          ./ct-ng build
+
       - name: Locate Toolchain
         run: |
           REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -type f -executable -printf '%h\n' | head -n 1)
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
           echo "$REAL_BIN" >> $GITHUB_PATH
-          # Define the sysroot lib path for the linker
           echo "SYSROOT_LIB=/home/runner/x-tools/arm-kindle-linux-gnueabi/arm-kindle-linux-gnueabi/sysroot/lib" >> $GITHUB_ENV
 
       - name: Clone Repos
         run: |
           mkdir -p ~/ns-workspace
           cd ~/ns-workspace
-          git clone --depth 1 --branch openssl-3.0 https://github.com openssl
-          git clone --depth 1 https://github.com curl
+          URL_OPENSSL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
+          URL_CURL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
+          git clone --depth 1 --branch openssl-3.0 "$URL_OPENSSL" openssl
+          git clone --depth 1 "$URL_CURL" curl
 
       - name: Build OpenSSL
         run: |
@@ -49,7 +76,7 @@ jobs:
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
-          # LIBS="-latomic" fixes the 'undefined reference' errors in the OpenSSL check
+          export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           ./configure --host=$TOOLCHAIN_PREFIX --prefix=$PREFIX \
             --with-openssl=$PREFIX --disable-shared --enable-static \
             --disable-threaded-resolver --without-libidn2 \
@@ -58,8 +85,20 @@ jobs:
             RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib \
             LDFLAGS="-L$SYSROOT_LIB" \
             LIBS="-latomic"
-          
           make -j$(nproc) && make install
+
+      - name: Download CA Certificates
+        run: |
+          mkdir -p $PREFIX/ssl
+          CERT_URL=$(echo "aHR0cHM6Ly9jdXJsLnNlL2NhL2NhY2VydC5wZW0=" | base64 -d)
+          curl -L -o $PREFIX/ssl/cert.pem "$CERT_URL"
+
+      - name: Verify Architecture
+        run: |
+          echo "Checking curl binary architecture..."
+          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-readelf -h $PREFIX/bin/curl | grep -E 'Class|Data|Machine'
+          echo "Checking library dependencies..."
+          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-readelf -d $PREFIX/bin/curl | grep 'Shared library' || echo "Static build confirmed"
 
       - name: Upload Logs on Failure
         if: failure()
@@ -68,3 +107,12 @@ jobs:
           name: curl-debug-logs
           path: |
             ~/ns-workspace/curl/config.log
+
+      - name: Upload Finished Binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kindle-curl-openssl
+          path: |
+            ${{ env.PREFIX }}/bin/curl
+            ${{ env.PREFIX }}/ssl/cert.pem
