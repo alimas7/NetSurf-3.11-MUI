@@ -91,7 +91,18 @@ jobs:
           git clone --depth 1 --branch openssl-3.0 "$URL_OPENSSL" openssl
           git clone --depth 1 "$URL_CURL" curl
 
-      - name: 7. Build OpenSSL (Race Condition Fix)
+      - name: 7. Clone All Repositories
+        run: |
+          mkdir -p ~/ns-workspace
+          cd ~/ns-workspace
+          NS_BASE=$(echo "aHR0cHM6Ly9naXRodWIuY29tL25ldHN1cmYtYnJvd3Nlci8=" | base64 -d)
+          for r in buildsystem libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils netsurf; do
+            git clone --depth 1 "${NS_BASE}${r}.git"
+          done
+          git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d) openssl
+          git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d) curl
+
+      - name: 8. Build OpenSSL (Race Condition Fix)
         run: |
           cd ~/ns-workspace/openssl
           ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
@@ -100,7 +111,7 @@ jobs:
           make -j$(nproc) || make
           make install_sw
 
-      - name: 8. Build LibCurl (Atomic & PSL Fix)
+      - name: 9. Build LibCurl (Atomic & PSL Fix)
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
@@ -124,7 +135,7 @@ jobs:
       #     $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/curl
       #     ls -lh $PREFIX/bin/curl
 
-      - name: Build NetSurf Stack
+      - name: 10. Build NetSurf Stack
         run: |
           export NSSHARED=$PREFIX/share/netsurf-buildsystem
           mkdir -p $PREFIX/bin
@@ -148,7 +159,7 @@ jobs:
           cp nsfb $PREFIX/bin/netsurf-bin
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/netsurf-bin
 
-      - name: Inject Kindle Wrapper
+      - name: 11. Inject Kindle Wrapper
         run: |
           cat << 'EOF' > ${{ env.PREFIX }}/bin/netsurf-k3.sh
           #!/bin/sh
@@ -164,7 +175,7 @@ jobs:
           EOF
           chmod +x ${{ env.PREFIX }}/bin/netsurf-k3.sh
 
-      - name: Upload Artifacts
+      - name: 12. Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: kindle-netsurf-hardened
