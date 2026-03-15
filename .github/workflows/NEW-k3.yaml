@@ -166,7 +166,7 @@ jobs:
       - name: 12. Tar Runner Workspace
         if: always()
         run: |
-          tar -czf runner-workspace.tar.gz -C /home/runner . --exclude=runner-workspace.tar.gz
+          tar -czf runner-workspace.tar.gz --exclude=runner-workspace.tar.gz -C /home/runner
 
       - name: 13. Upload Artifacts
         if: always()
