@@ -1,0 +1,157 @@
+name: Build Hardened NetSurf for Kindle K3
+on: [push, workflow_dispatch]
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      PREFIX: /home/runner/ns-workspace/inst
+      TOOLCHAIN_PREFIX: arm-kindle-linux-gnueabi
+      RELEASE_TAG: "kindle-k3-v9"
+
+    steps:
+      - name: Install System Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gperf bison flex texinfo help2man python3-dev autoconf automake libtool-bin g++ gawk xz-utils
+
+      - name: Restore Toolchain & Locate Libs
+        run: |
+          # Pulling the 'toolchain-v9' release directly to bypass 50min build
+          BASE_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tLw==" | base64 -d)
+          curl -L "${BASE_URL}/${{ github.repository }}/releases/download/toolchain-v9/kindle-k3-toolchain.tar.xz" -o toolchain.tar.xz
+          mkdir -p ~/x-tools
+          tar -xJf toolchain.tar.xz -C /home/runner/
+          
+          # Dynamic Pathing for Linker
+          REAL_BIN=$(find /home/runner/x-tools -name "${{ env.TOOLCHAIN_PREFIX }}-gcc" | xargs dirname)
+          echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
+          echo "$REAL_BIN" >> $GITHUB_PATH
+          SYS_LIB=$(find /home/runner/x-tools -name "libatomic.a" | xargs dirname)
+          echo "SYSROOT_LIB=$SYS_LIB" >> $GITHUB_ENV
+
+      - name: Build OpenSSL & Curl (Atomics & SSL Fix)
+        run: |
+          mkdir -p ~/ns-workspace && cd ~/ns-workspace
+          URL_OPENSSL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbA==" | base64 -d)
+          URL_CURL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybA==" | base64 -d)
+          
+          git clone --depth 1 -branch openssl-3.0 "$URL_OPENSSL" openssl
+          git clone --depth 1 "$URL_CURL" curl
+
+          # Build OpenSSL
+          cd openssl
+          ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX
+          CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
+          AR=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ar \
+          RANLIB=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ranlib \
+          LD=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ld \
+          make -j$(nproc) install_sw
+
+          # Build Curl - THE CRITICAL FIX: Link libatomic AFTER openssl
+          cd ../curl
+          autoreconf -fi
+          export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+          ./configure --host=${{ env.TOOLCHAIN_PREFIX }} --prefix=$PREFIX \
+            --with-openssl=$PREFIX --disable-shared --enable-static
+          CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
+          LDFLAGS="-L$SYSROOT_LIB" \
+          LIBS="-latomic" \
+          make -j$(nproc) install
+
+      - name: Inject Smart Wrapper & Kindle Hardware Shims
+        run: |
+          cat << 'EOF' > ${{ env.PREFIX }}/bin/netsurf-k3.sh
+          #!/bin/sh
+          # --- Kindle K3 Smart Wrapper ---
+          
+          # 1. SSL/Time Sync & 30-Day Cert Refresh
+          CERT_FILE="/mnt/us/netsurf/cert.pem"
+          if [ ! -f "$CERT_FILE" ] || [ -n "$(find "$CERT_FILE" -mtime +30 2>/dev/null)" ]; then
+              ntpdate -u pool.ntp.org || date -s "2026-03-14"
+              curl -L -o "$CERT_FILE" https://curl.se
+          fi
+
+          # 2. Defaults
+          IMG_FLAG="-no-images"; JS_FLAG="-no-javascript"; Z_CSS=""; SHOW_DESC="OFF"
+          UA="Mozilla/5.0 (Kindle/3.0+) AppleWebKit/533.2 (KHTML, like Gecko) Version/4.0 Safari/533.2"
+
+          # 3. Interactive Menu Loop
+          while true; do
+              clear
+              echo "=========================================="
+              echo "   NETSURF SMART WRAPPER - KINDLE K3      "
+              echo "=========================================="
+              echo " 1. Images:      $( [ "$IMG_FLAG" = "" ] && echo "ON " || echo "OFF" )"
+              echo " 2. JavaScript:  $( [ "$JS_FLAG" = "" ] && echo "ON " || echo "OFF" )"
+              echo " 3. Lite Proxy:  ON (Default)"
+              echo " 4. Z-Order:     $( [ "$Z_CSS" != "" ] && echo "FLAT" || echo "NATV" )"
+              echo " 5. Descriptions: $SHOW_DESC"
+              echo "------------------------------------------"
+              if [ "$SHOW_DESC" = "ON" ]; then
+                  echo " [1] Prevents E-ink refresh lag."
+                  echo " [2] Prevents CPU-bound hangs."
+                  echo " [4] Flattens layers to stop ghosting."
+              fi
+              echo " [S] SAVE & LAUNCH  |  [X] EXIT"
+              echo "=========================================="
+              read -n 1 opt
+              case $opt in
+                  1) [ "$IMG_FLAG" = "" ] && IMG_FLAG="-no-images" || IMG_FLAG="" ;;
+                  2) [ "$JS_FLAG" = "" ] && JS_FLAG="-no-javascript" || JS_FLAG="" ;;
+                  4) [ "$Z_CSS" = "" ] && Z_CSS="* { z-index: 0 !important; position: absolute !important; }" || Z_CSS="" ;;
+                  5) [ "$SHOW_DESC" = "OFF" ] && SHOW_DESC="ON" || SHOW_DESC="OFF" ;;
+                  s|S) break ;;
+                  x|X) exit 0 ;;
+              esac
+          done
+
+          # 4. Apply Fixes & Launch
+          [ "$Z_CSS" != "" ] && echo "$Z_CSS" > /tmp/k3.css && CSS_FLAG="-style /tmp/k3.css"
+          (while true; do sleep 60; eips -f; done) & # Ghosting Fix
+          REFR_PID=$!
+          
+          # RAM Safety (128MB Swap)
+          [ ! -f /mnt/us/swapfile ] && dd if=/dev/zero of=/mnt/us/swapfile bs=1M count=128 && mkswap /mnt/us/swapfile
+          swapon /mnt/us/swapfile
+
+          ./netsurf -useragent "$UA" $IMG_FLAG $JS_FLAG $CSS_FLAG -v
+          
+          kill $REFR_PID
+          swapoff /mnt/us/swapfile
+          EOF
+          chmod +x ${{ env.PREFIX }}/bin/netsurf-k3.sh
+
+      - name: 9. Final Verification & Strip
+        run: |
+          # Verify architecture
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -h $PREFIX/bin/curl | grep 'Machine'
+          # Verify OpenSSL linkage version string
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strings $PREFIX/bin/curl | grep "OpenSSL 3.0" | head -n 1
+          # Strip symbols to save space
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/curl
+          ls -lh $PREFIX/bin/curl
+
+      - name: Build NetSurf Stack
+        run: |
+          export NSSHARED=$PREFIX/share/netsurf-buildsystem
+          export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+          cd ~/ns-workspace/buildsystem && make install PREFIX=$PREFIX && cd ..
+          for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
+            cd ~/ns-workspace/$lib
+            make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=$TOOLCHAIN_PREFIX COMPONENT_TYPE=lib-static \
+              CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar PATH="$PATH"
+            cd ..
+          done
+          cd ~/ns-workspace/netsurf
+          make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED \
+            CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc PATH="$PATH"
+          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip nsfb
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kindle-netsurf-hardened
+          path: ${{ env.PREFIX }}/bin/
