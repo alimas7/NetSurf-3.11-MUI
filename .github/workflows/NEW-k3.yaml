@@ -86,10 +86,10 @@ jobs:
       - name: 6. Clone Repos
         run: |
           mkdir -p ~/ns-workspace && cd ~/ns-workspace
-          URL_OPENSSL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
-          URL_CURL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
-          git clone --depth 1 --branch openssl-3.0 "$URL_OPENSSL" openssl
-          git clone --depth 1 "$URL_CURL" curl
+          # URL_OPENSSL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
+          # URL_CURL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
+          # git clone --depth 1 --branch openssl-3.0 "$URL_OPENSSL" openssl
+          # git clone --depth 1 "$URL_CURL" curl
 
       - name: 7. Clone All Repositories
         run: |
@@ -176,6 +176,7 @@ jobs:
           chmod +x ${{ env.PREFIX }}/bin/netsurf-k3.sh
 
       - name: 12. Upload Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kindle-netsurf-hardened
