@@ -19,7 +19,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
-          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl tree pkg-config
+          python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl tree pkg-config \
+          libexpat1-dev libpng-dev libjpeg-dev libgif-dev libwebp-dev libfreetype-dev zlib1g-dev
 
       - name: 1. Try Restore from Cache
         id: cache-toolchain
@@ -68,10 +69,10 @@ jobs:
             tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
           fi
           gh release create ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz \
-            --repo ${{ github.repository }} \
-            --title "Kindle Toolchain" --notes "Permanent backup" || \
+          --repo ${{ github.repository }} \
+          --title "Kindle Toolchain" --notes "Permanent backup" || \
           gh release upload ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz \
-            --repo ${{ github.repository }} --clobber
+          --repo ${{ github.repository }} --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -83,15 +84,7 @@ jobs:
           SYS_LIB=$(find /home/runner -name "libatomic.a" -printf '%h\n' | head -n 1)
           echo "SYSROOT_LIB=$SYS_LIB" >> $GITHUB_ENV
 
-      - name: 6. Clone Repos
-        run: |
-          mkdir -p ~/ns-workspace && cd ~/ns-workspace
-          # URL_OPENSSL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
-          # URL_CURL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
-          # git clone --depth 1 --branch openssl-3.0 "$URL_OPENSSL" openssl
-          # git clone --depth 1 "$URL_CURL" curl
-
-      - name: 7. Clone All Repositories
+      - name: 6. Clone All Repositories
         run: |
           mkdir -p ~/ns-workspace
           cd ~/ns-workspace
@@ -102,68 +95,53 @@ jobs:
           git clone --depth 1 --branch openssl-3.0 $(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d) openssl
           git clone --depth 1 $(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d) curl
 
-      - name: 8. Build OpenSSL (Race Condition Fix)
+      - name: 7. Build OpenSSL
         run: |
           cd ~/ns-workspace/openssl
           ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
-            CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc AR=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ar \
-            RANLIB=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ranlib LD=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ld
+          CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc AR=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ar \
+          RANLIB=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ranlib LD=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ld
           make -j$(nproc) || make
           make install_sw
 
-      - name: 9. Build LibCurl (Atomic & PSL Fix)
+      - name: 8. Build LibCurl
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
           ./configure --host=${{ env.TOOLCHAIN_PREFIX }} --prefix=$PREFIX \
-            --with-openssl=$PREFIX --disable-shared --enable-static \
-            --disable-threaded-resolver --without-libidn2 \
-            --without-libpsl \
-            CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
-            LDFLAGS="-L$SYSROOT_LIB" \
-            LIBS="-latomic"
+          --with-openssl=$PREFIX --disable-shared --enable-static \
+          --disable-threaded-resolver --without-libidn2 --without-libpsl \
+          CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
+          LDFLAGS="-L$SYSROOT_LIB" LIBS="-latomic"
           make -j$(nproc) && make install
 
-      # - name: 9. Final Verification & Strip
-      #   run: |
-      #     # Verify architecture
-      #     $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -h $PREFIX/bin/curl | grep 'Machine'
-      #     # Verify OpenSSL linkage version string
-      #     $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strings $PREFIX/bin/curl | grep "OpenSSL 3.0" | head -n 1
-      #     # Strip symbols to save space
-      #     $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/curl
-      #     ls -lh $PREFIX/bin/curl
-
-      - name: 10. Build NetSurf Stack
+      - name: 9. Build NetSurf Stack
         run: |
           export NSSHARED=$PREFIX/share/netsurf-buildsystem
           mkdir -p $PREFIX/bin
-          
           cd ~/ns-workspace/buildsystem
           make install PREFIX=$PREFIX
-          
+
           for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
             cd ~/ns-workspace/$lib
             make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=framebuffer \
-              COMPONENT_TYPE=lib-static CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc
+            COMPONENT_TYPE=lib-static CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc
           done
-          
+
           cd ~/ns-workspace/netsurf
-          # Final Link requires explicit atomic and ssl paths
           make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED \
-            CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
-            LDFLAGS="-L$PREFIX/lib -L$SYSROOT_LIB -latomic" \
-            NETSURF_USE_VIDEO_FROB=NO
-          
+          CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
+          LDFLAGS="-L$PREFIX/lib -L$SYSROOT_LIB -latomic -lexpat -lpng -ljpeg -lz -lfreetype -lm" \
+          NETSURF_USE_VIDEO_FROB=NO
+
           cp nsfb $PREFIX/bin/netsurf-bin
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/netsurf-bin
 
-      - name: 11. Inject Kindle Wrapper
+      - name: 10. Inject Kindle Wrapper
         run: |
           cat << 'EOF' > ${{ env.PREFIX }}/bin/netsurf-k3.sh
           #!/bin/sh
-          # Kindle K3 Entry Point
           cd $(dirname "$0")
           if [ ! -f /mnt/us/swapfile ]; then
             dd if=/dev/zero of=/mnt/us/swapfile bs=1M count=128
@@ -175,9 +153,9 @@ jobs:
           EOF
           chmod +x ${{ env.PREFIX }}/bin/netsurf-k3.sh
 
-      - name: 12. Upload Artifacts
+      - name: 11. Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kindle-netsurf-hardened
-          path: /home/runner
+          path: /home/runner/
