@@ -20,7 +20,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
           python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl tree pkg-config \
-          libpng-dev libjpeg-dev libgif-dev libwebp-dev libfreetype-dev zlib1g-dev
+          libexpat1-dev libpng-dev libjpeg-dev libgif-dev libwebp-dev libfreetype-dev zlib1g-dev
 
       - name: 1. Try Restore from Cache
         id: cache-toolchain
@@ -127,16 +127,14 @@ jobs:
             cd ~/ns-workspace/$lib
             # Added WITH_ flags to ensure libdom skips expat bindings
             make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=framebuffer \
-            COMPONENT_TYPE=lib-static CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
-            NETSURF_USE_LIBXML2=NO NETSURF_USE_EXPAT=NO \
-            WITH_EXPAT=NO WITH_LIBXML2=NO
+            COMPONENT_TYPE=lib-static CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc
           done
 
           cd ~/ns-workspace/netsurf
           make TARGET=framebuffer PREFIX=$PREFIX NSSHARED=$NSSHARED \
           CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
-          LDFLAGS="-L$PREFIX/lib -L$SYSROOT_LIB -latomic -lpng -ljpeg -lz -lfreetype -lm" \
-          NETSURF_USE_VIDEO_FROB=NO NETSURF_USE_LIBXML2=NO NETSURF_USE_EXPAT=NO
+          LDFLAGS="-L$PREFIX/lib -L$SYSROOT_LIB -latomic -lexpat -lpng -ljpeg -lz -lfreetype -lm" \
+          NETSURF_USE_VIDEO_FROB=NO
 
           cp nsfb $PREFIX/bin/netsurf-bin
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/netsurf-bin
