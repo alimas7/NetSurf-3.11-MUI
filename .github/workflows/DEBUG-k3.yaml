@@ -67,7 +67,6 @@ jobs:
           if [ ! -f kindle-k3-toolchain.tar.xz ]; then
             tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
           fi
-          # Explicitly pointing gh to the repo bypasses the .git folder requirement
           gh release create ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz \
             --repo ${{ github.repository }} \
             --title "Kindle Toolchain" --notes "Permanent backup" || \
@@ -98,11 +97,10 @@ jobs:
           ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
             CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc AR=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ar \
             RANLIB=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ranlib LD=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ld
-          # Fallback to single-threaded build if parallel 'mv' race occurs
           make -j$(nproc) || make
           make install_sw
 
-      - name: 8. Build LibCurl (Atomic Fix)
+      - name: 8. Build LibCurl (Atomic & PSL Fix)
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
@@ -110,15 +108,21 @@ jobs:
           ./configure --host=${{ env.TOOLCHAIN_PREFIX }} --prefix=$PREFIX \
             --with-openssl=$PREFIX --disable-shared --enable-static \
             --disable-threaded-resolver --without-libidn2 \
+            --without-libpsl \
             CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
             LDFLAGS="-L$SYSROOT_LIB" \
             LIBS="-latomic"
           make -j$(nproc) && make install
 
-      - name: 9. Final Verification
+      - name: 9. Final Verification & Strip
         run: |
+          # Verify architecture
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -h $PREFIX/bin/curl | grep 'Machine'
+          # Verify OpenSSL linkage version string
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strings $PREFIX/bin/curl | grep "OpenSSL 3.0" | head -n 1
+          # Strip symbols to save space
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/curl
+          ls -lh $PREFIX/bin/curl
 
       - name: 10. Save Binary Artifact
         uses: actions/upload-artifact@v4
