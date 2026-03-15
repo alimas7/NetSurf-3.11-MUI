@@ -125,9 +125,11 @@ jobs:
 
           for lib in libparserutils libwapcaplet libhubbub libdom libcss libnsbmp libnsgif libnsutils; do
             cd ~/ns-workspace/$lib
+            # Added WITH_ flags to ensure libdom skips expat bindings
             make install PREFIX=$PREFIX NSSHARED=$NSSHARED TARGET=framebuffer \
             COMPONENT_TYPE=lib-static CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
-            NETSURF_USE_LIBXML2=NO NETSURF_USE_EXPAT=NO
+            NETSURF_USE_LIBXML2=NO NETSURF_USE_EXPAT=NO \
+            WITH_EXPAT=NO WITH_LIBXML2=NO
           done
 
           cd ~/ns-workspace/netsurf
@@ -139,7 +141,14 @@ jobs:
           cp nsfb $PREFIX/bin/netsurf-bin
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/netsurf-bin
 
-      - name: 10. Inject Kindle Wrapper
+      - name: 10. Final Verification
+        run: |
+          echo "--- Binary Architecture ---"
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -h $PREFIX/bin/netsurf-bin | grep 'Machine'
+          echo "--- Dynamic Dependencies (Should be minimal/static) ---"
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -d $PREFIX/bin/netsurf-bin | grep 'NEEDED' || echo "Fully Static"
+
+      - name: 11. Inject Kindle Wrapper
         run: |
           cat << 'EOF' > ${{ env.PREFIX }}/bin/netsurf-k3.sh
           #!/bin/sh
@@ -154,12 +163,12 @@ jobs:
           EOF
           chmod +x ${{ env.PREFIX }}/bin/netsurf-k3.sh
 
-      - name: 11. Tar Runner Workspace
+      - name: 12. Tar Runner Workspace
         if: always()
         run: |
           tar -czf runner-workspace.tar.gz -C /home/runner . --exclude=runner-workspace.tar.gz
 
-      - name: 12. Upload Artifacts
+      - name: 13. Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
