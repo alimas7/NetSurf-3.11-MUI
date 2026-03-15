@@ -12,6 +12,9 @@ jobs:
       CACHE_KEY: Linux-kindle-k3-toolchain-v9
       RELEASE_TAG: toolchain-v9
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Install System Deps
         run: |
           sudo apt-get update
@@ -64,17 +67,21 @@ jobs:
           if [ ! -f kindle-k3-toolchain.tar.xz ]; then
             tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
           fi
-          gh release create ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz --title "Kindle Toolchain" --notes "Permanent backup" || \
-          gh release upload ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz --clobber
+          # Explicitly pointing gh to the repo bypasses the .git folder requirement
+          gh release create ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz \
+            --repo ${{ github.repository }} \
+            --title "Kindle Toolchain" --notes "Permanent backup" || \
+          gh release upload ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz \
+            --repo ${{ github.repository }} --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 5. Locate Toolchain Paths
         run: |
-          REAL_BIN=$(find /home/runner/x-tools -name "${{ env.TOOLCHAIN_PREFIX }}-gcc" -type f -printf '%h\n' | head -n 1)
+          REAL_BIN=$(find /home/runner -name "${{ env.TOOLCHAIN_PREFIX }}-gcc" -type f -executable -printf '%h\n' | head -n 1)
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
           echo "$REAL_BIN" >> $GITHUB_PATH
-          SYS_LIB=$(find /home/runner/x-tools -name "libatomic.a" -printf '%h\n' | head -n 1)
+          SYS_LIB=$(find /home/runner -name "libatomic.a" -printf '%h\n' | head -n 1)
           echo "SYSROOT_LIB=$SYS_LIB" >> $GITHUB_ENV
 
       - name: 6. Clone Repos
@@ -91,7 +98,7 @@ jobs:
           ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
             CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc AR=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ar \
             RANLIB=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ranlib LD=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ld
-          # If parallel make fails due to 'mv' race condition, fall back to sequential
+          # Fallback to single-threaded build if parallel 'mv' race occurs
           make -j$(nproc) || make
           make install_sw
 
@@ -112,7 +119,6 @@ jobs:
         run: |
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -h $PREFIX/bin/curl | grep 'Machine'
           $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/curl
-          $PREFIX/bin/curl --version || echo "Verification finished"
 
       - name: 10. Save Binary Artifact
         uses: actions/upload-artifact@v4
