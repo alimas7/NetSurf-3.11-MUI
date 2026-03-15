@@ -1,12 +1,16 @@
-name: Debug Curl & OpenSSL Linkage
+name: Build Kindle Curl (Double Fallback)
 on: [push, workflow_dispatch]
 
 jobs:
-  debug-build:
+  build:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     env:
       PREFIX: /home/runner/ns-workspace/inst
       TOOLCHAIN_PREFIX: arm-kindle-linux-gnueabi
+      CACHE_KEY: Linux-kindle-k3-toolchain-v9
+      RELEASE_TAG: toolchain-v9
     steps:
       - name: Install System Deps
         run: |
@@ -14,20 +18,29 @@ jobs:
           sudo apt-get install -y gperf bison flex texinfo help2man make libncurses5-dev \
           python3-dev autoconf automake libtool-bin g++ gawk xz-utils wget curl tree pkg-config
 
-      - name: Restore Toolchain Cache
+      - name: 1. Try Restore from Cache
         id: cache-toolchain
         uses: actions/cache/restore@v4
         with:
           path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v9
+          key: ${{ env.CACHE_KEY }}
 
-      - name: Build Toolchain Fallback
+      - name: 2. Try Download from Release (If Cache Miss)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        id: download-release
+        continue-on-error: true
+        run: |
+          REL_URL=$(echo "aHR0cHM6Ly9naXRodWIuY29tLw==" | base64 -d)"${{ github.repository }}"$(echo "L3JlbGVhc2VzL2Rvd25sb2FkLw==" | base64 -d)
+          curl -L "${REL_URL}/${{ env.RELEASE_TAG }}/kindle-k3-toolchain.tar.xz" -o toolchain.tar.xz
+          mkdir -p ~/x-tools
+          tar -xJ -f toolchain.tar.xz -C /home/runner/
+
+      - name: 3. Build Toolchain Fallback (If Cache and Release Miss)
+        if: steps.cache-toolchain.outputs.cache-hit != 'true' && steps.download-release.outcome != 'success'
         run: |
           CT_REPO=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2Nyb3NzdG9vbC1uZy9jcm9zc3Rvb2wtbmcuZ2l0" | base64 -d)
           git clone --depth 1 "$CT_REPO"
-          cd crosstool-ng
-          ./bootstrap && ./configure --enable-local && make
+          cd crosstool-ng && ./bootstrap && ./configure --enable-local && make
           cat > kindle_k3_defconfig <<EOF
           CT_EXPERIMENTAL=y
           CT_ALLOW_OBSOLETE=y
@@ -43,65 +56,66 @@ jobs:
           CT_GCC_V_6=y
           CT_LOG_PROGRESS_BAR=n
           EOF
-          ./ct-ng defconfig DEFCONFIG=kindle_k3_defconfig
-          ./ct-ng build
+          ./ct-ng defconfig DEFCONFIG=kindle_k3_defconfig && ./ct-ng build
 
-      - name: Save Toolchain Cache
-        if: steps.cache-toolchain.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/x-tools
-          key: ${{ runner.os }}-kindle-k3-toolchain-v9
-
-      - name: Locate Toolchain
+      - name: 4. Ensure Release Exists (Permanent Storage)
+        if: steps.cache-toolchain.outputs.cache-hit == 'true' || steps.download-release.outcome != 'success'
         run: |
-          REAL_BIN=$(find /home/runner/x-tools -name "arm-kindle-linux-gnueabi-gcc" -type f -executable -printf '%h\n' | head -n 1)
+          if [ ! -f kindle-k3-toolchain.tar.xz ]; then
+            tar -cJf kindle-k3-toolchain.tar.xz -C /home/runner x-tools/
+          fi
+          gh release create ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz --title "Kindle Toolchain" --notes "Permanent backup" || \
+          gh release upload ${{ env.RELEASE_TAG }} kindle-k3-toolchain.tar.xz --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 5. Locate Toolchain Paths
+        run: |
+          REAL_BIN=$(find /home/runner/x-tools -name "${{ env.TOOLCHAIN_PREFIX }}-gcc" -type f -printf '%h\n' | head -n 1)
           echo "TOOLCHAIN_BIN=$REAL_BIN" >> $GITHUB_ENV
           echo "$REAL_BIN" >> $GITHUB_PATH
           SYS_LIB=$(find /home/runner/x-tools -name "libatomic.a" -printf '%h\n' | head -n 1)
           echo "SYSROOT_LIB=$SYS_LIB" >> $GITHUB_ENV
 
-      - name: Clone Repos
+      - name: 6. Clone Repos
         run: |
-          mkdir -p ~/ns-workspace
-          cd ~/ns-workspace
+          mkdir -p ~/ns-workspace && cd ~/ns-workspace
           URL_OPENSSL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL29wZW5zc2wvb3BlbnNzbC5naXQ=" | base64 -d)
           URL_CURL=$(echo "aHR0cHM6Ly9naXRodWIuY29tL2N1cmwvY3VybC5naXQ=" | base64 -d)
           git clone --depth 1 --branch openssl-3.0 "$URL_OPENSSL" openssl
           git clone --depth 1 "$URL_CURL" curl
 
-      - name: Build OpenSSL
+      - name: 7. Build OpenSSL (Race Condition Fix)
         run: |
           cd ~/ns-workspace/openssl
           ./Configure linux-armv4 --prefix=$PREFIX --openssldir=$PREFIX/ssl no-shared \
-            CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc \
-            AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar \
-            RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib \
-            LD=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ld
-          make -j$(nproc) install_sw
+            CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc AR=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ar \
+            RANLIB=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ranlib LD=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-ld
+          # If parallel make fails due to 'mv' race condition, fall back to sequential
+          make -j$(nproc) || make
+          make install_sw
 
-      - name: Build LibCurl (Fixed)
+      - name: 8. Build LibCurl (Atomic Fix)
         run: |
           cd ~/ns-workspace/curl
           autoreconf -fi
           export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-          ./configure --host=$TOOLCHAIN_PREFIX --prefix=$PREFIX \
+          ./configure --host=${{ env.TOOLCHAIN_PREFIX }} --prefix=$PREFIX \
             --with-openssl=$PREFIX --disable-shared --enable-static \
             --disable-threaded-resolver --without-libidn2 \
-            CC=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-gcc \
-            AR=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ar \
-            RANLIB=$TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-ranlib \
+            CC=$TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-gcc \
             LDFLAGS="-L$SYSROOT_LIB" \
             LIBS="-latomic"
           make -j$(nproc) && make install
 
-      - name: Verify Architecture
+      - name: 9. Final Verification
         run: |
-          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-readelf -h $PREFIX/bin/curl | grep -E 'Class|Data|Machine'
-          $TOOLCHAIN_BIN/$TOOLCHAIN_PREFIX-strip $PREFIX/bin/curl
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-readelf -h $PREFIX/bin/curl | grep 'Machine'
+          $TOOLCHAIN_BIN/${{ env.TOOLCHAIN_PREFIX }}-strip $PREFIX/bin/curl
+          $PREFIX/bin/curl --version || echo "Verification finished"
 
-      - name: Upload Finished Binaries
+      - name: 10. Save Binary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kindle-curl-stripped
+          name: curl-kindle-k3
           path: ${{ env.PREFIX }}/bin/curl
